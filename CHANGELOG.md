@@ -16,6 +16,8 @@ development baseline.
   `configure --help`, `doctor --help`, and a bounded MCP stdio startup, and
   verifies an upgrade from the latest published release keeps an existing
   `.mcp.json` readable.
+- CI now creates a GitHub Release for each published tag, attaching the
+  built wheel, sdist, and a `SHA256SUMS` checksum file covering both.
 
 ### Changed
 

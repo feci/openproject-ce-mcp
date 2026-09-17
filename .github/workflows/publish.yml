@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 15
     environment: pypi
     permissions:
-      contents: read        # actions/checkout (explicit once any permission is set)
+      contents: write       # actions/checkout, plus gh release create/upload (GITHUB_TOKEN)
       id-token: write       # required for PyPI trusted publishing (OIDC) and attestation signing
       attestations: write   # required to publish a build-provenance attestation
 
@@ -66,3 +66,32 @@ jobs:
 
       - name: Publish to PyPI
         run: uv publish
+
+      - name: Extract this version's CHANGELOG section for release notes
+        run: |
+          awk -v ver="${GITHUB_REF_NAME#v}" '
+            /^## \[/ { if (found) exit; if ($0 ~ "^## \\[" ver "\\]") { found=1; next } }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error::No CHANGELOG.md section found for version ${GITHUB_REF_NAME#v} — add one before tagging" >&2
+            exit 1
+          fi
+
+      - name: Generate SHA-256 checksums
+        # Generated after attestation, so the attested dist/* subject set
+        # (wheel + sdist only) never includes this derived file.
+        run: |
+          cd dist
+          sha256sum -- * > SHA256SUMS
+          cd ..
+
+      - name: Create GitHub Release with wheel, sdist, and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file release-notes.md \
+            dist/*.whl dist/*.tar.gz dist/SHA256SUMS
