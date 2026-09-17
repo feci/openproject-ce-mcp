@@ -9,6 +9,14 @@ development baseline.
 
 ## [Unreleased]
 
+### Added
+
+- CI now installs the built wheel via both `pipx` and `uv tool install` in
+  an isolated environment outside the repository, checks `--version`,
+  `configure --help`, `doctor --help`, and a bounded MCP stdio startup, and
+  verifies an upgrade from the latest published release keeps an existing
+  `.mcp.json` readable.
+
 ### Changed
 
 - The package version now has a single source of truth (`pyproject.toml`);
