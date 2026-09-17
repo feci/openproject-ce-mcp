@@ -9,6 +9,13 @@ development baseline.
 
 ## [Unreleased]
 
+### Changed
+
+- The package version now has a single source of truth (`pyproject.toml`);
+  `__version__` is derived from installed package metadata at runtime instead
+  of being hand-maintained separately. CI verifies wheel/sdist build
+  reproducibility and that a release tag matches the declared version.
+
 ## [0.4.0] - 2026-09-12
 
 Complete the layered `app/` architecture migration so the codebase can scale

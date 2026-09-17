@@ -68,11 +68,32 @@ The MCP server runs as a subprocess. After any code change, restart your MCP cli
 
 ## Releasing
 
+`pyproject.toml`'s `[project].version` is the single source of truth for the
+package version — nothing else needs to be edited by hand. `__init__.py`
+reads it back at runtime via `importlib.metadata`, so the two can no longer
+drift independently.
+
+To cut a release:
+
+1. Bump `version` in `pyproject.toml` (and nothing else).
+2. Update `CHANGELOG.md`'s `[Unreleased]` section into a new `[X.Y.Z] - date` entry.
+3. Commit, then tag the commit `vX.Y.Z` and push the tag.
+
+CI verifies version consistency before publishing:
+- `publish.yml` rejects a tag that isn't an exact `vMAJOR.MINOR.PATCH` (no
+  pre-release suffix) and rejects a tag that doesn't match `pyproject.toml`'s
+  declared version.
+- `test.yml`'s `build` job builds the package twice from the same commit and
+  verifies the wheel and sdist are byte-identical, and checks both with
+  `twine check`.
+- `tests/test_versioning.py` fails locally or in CI if `__version__` (derived
+  from installed package metadata) and `pyproject.toml`'s declared version
+  ever disagree — this only happens if your local venv is stale; re-run
+  `uv sync --dev`.
+
 The package is published to [PyPI](https://pypi.org/project/openproject-ce-mcp/)
 via GitHub Actions using [trusted publishing](https://docs.pypi.org/trusted-publishers/)
-(OIDC — no API token stored), triggered by pushing a `vX.Y.Z` tag. Every push
-and PR also runs the test matrix plus a `build` job (`uv build` +
-`uvx twine check dist/*`) so the package always stays buildable.
+(OIDC — no API token stored), triggered by pushing the `vX.Y.Z` tag.
 
 ## See also
 
