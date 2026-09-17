@@ -104,6 +104,18 @@ def test_check_binary_reports_version(capsys):
     assert "[OK] Binary:" in captured.out
 
 
+def test_check_binary_reports_python_version(capsys):
+    """Binary check should also report the running Python version."""
+    import platform
+
+    from openproject_ce_mcp.doctor import _check_binary
+
+    _check_binary()
+    captured = capsys.readouterr()
+    assert "[OK] Python:" in captured.out
+    assert platform.python_version() in captured.out
+
+
 # Client discovery tests
 
 
@@ -384,6 +396,30 @@ async def test_api_connectivity_connection_error(make_doctor_settings, mock_conn
     assert "cannot connect" in output.lower() or "could not reach" in output.lower()
 
 
+@pytest.mark.asyncio
+async def test_api_connectivity_tls_failure_distinguished(make_doctor_settings, capsys):
+    """A TLS/certificate handshake failure should report a distinct message
+    from a plain connection failure, not the same generic "cannot connect".
+    """
+    from openproject_ce_mcp.doctor import _check_api_connectivity
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate")
+
+    settings = make_doctor_settings()
+    api_ok, user = await _check_api_connectivity(settings, httpx.MockTransport(handler))
+
+    assert api_ok is False
+    assert user is None
+
+    captured = capsys.readouterr()
+    output = captured.err + captured.out
+    assert "[FAIL] API:" in output
+    assert "tls" in output.lower() or "certificate" in output.lower()
+    # Must not fall into the generic connection-failure branch instead.
+    assert "cannot connect" not in output.lower()
+
+
 # Tool registration tests
 
 
@@ -592,3 +628,119 @@ def test_restart_hints_deduplicated(capsys):
     captured = capsys.readouterr()
     # Should only appear once
     assert captured.out.count("Test Client") == 1
+
+
+# MCP stdio handshake tests
+
+
+@pytest.mark.asyncio
+async def test_stdio_handshake_success(make_doctor_settings, capsys):
+    """A real (unmocked) settings object should pass the in-process dispatch check."""
+    from openproject_ce_mcp.doctor import _check_stdio_handshake
+
+    settings = make_doctor_settings()
+    result = await _check_stdio_handshake(settings)
+
+    assert result is True
+    captured = capsys.readouterr()
+    assert "[OK] MCP:" in captured.out
+
+
+@pytest.mark.asyncio
+async def test_stdio_handshake_timeout(make_doctor_settings, monkeypatch, capsys):
+    """A hung dispatch check should fail via the timeout, not hang the test."""
+    import asyncio
+
+    import openproject_ce_mcp.doctor as doctor_module
+    from openproject_ce_mcp.doctor import _check_stdio_handshake
+
+    async def _hang(settings):
+        await asyncio.sleep(999)
+
+    monkeypatch.setattr(doctor_module, "_build_and_verify_dispatch", _hang)
+
+    settings = make_doctor_settings()
+    result = await _check_stdio_handshake(settings, timeout=0.05)
+
+    assert result is False
+    captured = capsys.readouterr()
+    output = captured.err + captured.out
+    assert "[FAIL] MCP:" in output
+    assert "did not complete" in output
+
+
+# Config-file permission tests
+
+
+def test_config_permissions_warns_on_unsafe_mode(tmp_path, monkeypatch, capsys):
+    """A config file readable/writable by group or other should warn."""
+    import openproject_ce_mcp.doctor as doctor_module
+    from openproject_ce_mcp.doctor import _check_config_permissions
+
+    monkeypatch.setattr(doctor_module, "_IS_WINDOWS", False)
+
+    config_file = tmp_path / "config.json"
+    config_file.write_text("{}")
+    config_file.chmod(0o644)
+
+    _check_config_permissions([(Mock(), config_file)])
+
+    captured = capsys.readouterr()
+    assert "[WARN] Permissions:" in captured.err
+    assert str(config_file) in captured.err
+
+
+def test_config_permissions_silent_on_safe_mode(tmp_path, monkeypatch, capsys):
+    """A config file restricted to the owner should not warn."""
+    import openproject_ce_mcp.doctor as doctor_module
+    from openproject_ce_mcp.doctor import _check_config_permissions
+
+    monkeypatch.setattr(doctor_module, "_IS_WINDOWS", False)
+
+    config_file = tmp_path / "config.json"
+    config_file.write_text("{}")
+    config_file.chmod(0o600)
+
+    _check_config_permissions([(Mock(), config_file)])
+
+    captured = capsys.readouterr()
+    assert "[WARN] Permissions:" not in captured.err
+
+
+def test_config_permissions_skips_on_windows(tmp_path, monkeypatch, capsys):
+    """On Windows, POSIX mode bits are not meaningful and must not be checked."""
+    import openproject_ce_mcp.doctor as doctor_module
+    from openproject_ce_mcp.doctor import _check_config_permissions
+
+    monkeypatch.setattr(doctor_module, "_IS_WINDOWS", True)
+
+    config_file = tmp_path / "config.json"
+    config_file.write_text("{}")
+    config_file.chmod(0o644)  # would warn on POSIX; must be ignored here
+
+    _check_config_permissions([(Mock(), config_file)])
+
+    captured = capsys.readouterr()
+    assert "[SKIP] Permissions:" in captured.out
+    assert "Windows" in captured.out
+    assert "[WARN]" not in captured.err
+
+
+# Secret masking
+
+
+def test_doctor_never_prints_token_value(make_doctor_settings, mock_auth_failure_transport, capsys):
+    """No diagnostic output, across success and failure paths, should ever
+    contain the raw API token value.
+    """
+    secret_token = "super-secret-token-xyz-do-not-print"  # noqa: S105 - test fixture value, not a real credential
+    settings = make_doctor_settings(api_token=secret_token)
+
+    with patch("openproject_ce_mcp.doctor._discover_clients", return_value=[]):
+        with patch("openproject_ce_mcp.doctor._check_config_parsing", return_value=(True, {})):
+            _run_doctor(settings_override=settings, transport=mock_auth_failure_transport)
+
+    captured = capsys.readouterr()
+    assert secret_token not in captured.out
+    assert secret_token not in captured.err
+    assert secret_token not in captured.err

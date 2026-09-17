@@ -18,6 +18,12 @@ development baseline.
   `.mcp.json` readable.
 - CI now creates a GitHub Release for each published tag, attaching the
   built wheel, sdist, and a `SHA256SUMS` checksum file covering both.
+- `doctor` now reports the Python version and executable in use, warns when a
+  discovered client configuration file has unsafe group/other-readable
+  permissions (POSIX only), and performs a real, strictly time-bounded MCP
+  stdio handshake self-test that never leaves a server process running. API
+  connectivity failures now distinguish TLS/certificate errors from a plain
+  connection failure and include actionable remediation hints.
 
 ### Changed
 

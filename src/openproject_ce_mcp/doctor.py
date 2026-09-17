@@ -11,18 +11,22 @@ import dataclasses
 import json
 import logging
 import os
+import platform
 import shutil
+import stat
 import sys
 
 import httpx
 
 from . import __version__
-from .client import AuthenticationError, OpenProjectClient, OpenProjectError
+from .client import AuthenticationError, OpenProjectClient, OpenProjectError, TransportError
 from .config import ConfigError, Settings, legacy_env_warnings
 from .models import CurrentUser
 
 EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
+
+_IS_WINDOWS = sys.platform == "win32"  # mirrors setup_cli.py's own module-level idiom
 
 
 def run_doctor() -> int:
@@ -57,6 +61,8 @@ def _run_doctor(
     if not config_ok:
         failures += 1
 
+    _check_config_permissions(client_configs)
+
     env_ok, settings = _check_env_config(settings_override, client_env)
     if not env_ok:
         failures += 1
@@ -78,6 +84,9 @@ def _run_doctor(
     if not _check_tool_registration(settings):
         failures += 1
 
+    if not asyncio.run(_check_stdio_handshake(settings)):
+        failures += 1
+
     if client_configs:
         _print_restart_hints(client_configs)
 
@@ -90,9 +99,10 @@ def _run_doctor(
 
 
 def _check_binary() -> bool:
-    """Check binary path and version."""
+    """Check binary path, package version, and Python runtime."""
     path = shutil.which("openproject-ce-mcp") or sys.argv[0]
     print(f"[OK] Binary: {path} (v{__version__})")
+    print(f"[OK] Python: {platform.python_version()} ({sys.executable})")
     return True
 
 
@@ -184,6 +194,36 @@ def _check_config_parsing(client_configs: list[tuple]) -> tuple[bool, dict[str, 
     return (all_ok, merged_env)
 
 
+def _check_config_permissions(client_configs: list[tuple]) -> None:
+    """Warn about POSIX permission bits that grant group/other access to
+    config files containing OPENPROJECT_API_TOKEN. Read-only: stats the path,
+    never opens or reads file contents, so it cannot itself leak a token.
+    Matches the 0o600-is-safe convention setup_cli.py's writers already
+    enforce (_backup/_atomic_write chmod to 0o600); this is the reader side.
+    """
+    if _IS_WINDOWS:
+        print("[SKIP] Permissions: not checked on Windows (POSIX mode bits do not apply)")
+        return
+
+    seen: set[str] = set()
+    for _client, target in client_configs:
+        key = str(target)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            mode = stat.S_IMODE(target.stat().st_mode)
+        except OSError:
+            continue  # already reported elsewhere if unreadable
+        if mode & 0o077:
+            print(
+                f"[WARN] Permissions: {target} is readable/writable by group or "
+                f"other (mode {oct(mode)}); run `chmod 600 {target}` to restrict "
+                "it to your user only",
+                file=sys.stderr,
+            )
+
+
 def _check_env_config(
     settings_override: Settings | None,
     client_env: dict[str, str],
@@ -236,6 +276,28 @@ def _print_project_scope_summary(settings: Settings) -> None:
     print(f"  Admin writes: {settings.enable_admin_write}")
 
 
+def _is_tls_failure(exc: BaseException) -> bool:
+    """Real TLS/cert failures always embed CPython's stable "[SSL: ...]" ssl-module
+    error text. OpenProjectClient's transport layer wraps every httpx transport
+    exception (including a TLS handshake failure, which httpx itself raises as
+    httpx.ConnectError with no separate public SSL exception type) into
+    TransportError via `raise TransportError(...) from exc` — so the original
+    httpx exception, and its own "[SSL: ...]" text, survives on __cause__.
+    Verified empirically: httpx.ConnectError's __cause__ is httpcore's own
+    ConnectError, never ssl.SSLError itself at any depth, but its stringified
+    message still contains the OpenSSL error text, so substring matching (not
+    isinstance-walking __cause__) is the reliable mechanism here.
+    """
+    seen: set[int] = set()
+    cause: BaseException | None = exc
+    while cause is not None and id(cause) not in seen:
+        if "[SSL:" in str(cause):
+            return True
+        seen.add(id(cause))
+        cause = cause.__cause__
+    return False
+
+
 async def _check_api_connectivity(
     settings: Settings,
     transport: httpx.AsyncBaseTransport | None,
@@ -256,12 +318,30 @@ async def _check_api_connectivity(
         user = await client.current_user.get_current_user()
         print(f"[OK] API: connected ({user.name})")
         return (True, user)
-    except httpx.ConnectError:
-        print(f"[FAIL] API: cannot connect to {settings.base_url}", file=sys.stderr)
-    except httpx.TimeoutException:
-        print("[FAIL] API: connection timeout", file=sys.stderr)
+    except TransportError as e:
+        if _is_tls_failure(e):
+            print(
+                f"[FAIL] API: TLS/certificate error connecting to {settings.base_url} "
+                "(check the server's certificate, or OPENPROJECT_VERIFY_SSL if this is "
+                "a trusted internal CA)",
+                file=sys.stderr,
+            )
+        elif "timed out" in str(e).lower():
+            print(
+                "[FAIL] API: connection timeout (server reachable but slow, or a "
+                "firewall is silently dropping packets)",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"[FAIL] API: cannot connect to {settings.base_url} (check the URL and that the server is reachable)",
+                file=sys.stderr,
+            )
     except AuthenticationError:
-        print("[FAIL] API: authentication failed", file=sys.stderr)
+        print(
+            "[FAIL] API: authentication failed (check OPENPROJECT_API_TOKEN is current and has not been revoked)",
+            file=sys.stderr,
+        )
     except OpenProjectError as e:
         print(f"[FAIL] API: {e}", file=sys.stderr)
     except Exception as e:
@@ -269,6 +349,40 @@ async def _check_api_connectivity(
     finally:
         await client.aclose()
     return (False, None)
+
+
+async def _build_and_verify_dispatch(settings: Settings) -> None:
+    from .server import create_app
+    from .strict_mcpserver import verify_strict_dispatch
+
+    app = create_app(settings)
+    await verify_strict_dispatch(app)
+
+
+async def _check_stdio_handshake(settings: Settings, *, timeout: float = 5.0) -> bool:
+    """Verify the MCP stdio dispatch path in-process, with a strict timeout.
+
+    Never starts the stdio transport loop or spawns a process: create_app()
+    only builds the server object (its lifespan, which does the real API
+    client initialization, only runs inside app.run() — never here), and
+    verify_strict_dispatch() probes the low-level dispatch handler directly
+    in memory (see strict_mcpserver.py). Structurally cannot hang on real
+    I/O; the timeout guards only against an unexpected SDK-internal issue.
+    """
+    try:
+        await asyncio.wait_for(_build_and_verify_dispatch(settings), timeout=timeout)
+        print("[OK] MCP: stdio dispatch handshake verified")
+        return True
+    except asyncio.TimeoutError:
+        print(
+            f"[FAIL] MCP: stdio handshake did not complete within {timeout}s "
+            "(this indicates an SDK-internal issue, not a network problem)",
+            file=sys.stderr,
+        )
+        return False
+    except Exception as e:
+        print(f"[FAIL] MCP: stdio handshake failed - {type(e).__name__}", file=sys.stderr)
+        return False
 
 
 def _check_tool_registration(settings: Settings) -> bool:
