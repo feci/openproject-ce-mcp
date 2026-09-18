@@ -32,6 +32,13 @@ development baseline.
   of being hand-maintained separately. CI verifies wheel/sdist build
   reproducibility and that a release tag matches the declared version.
 
+### Removed
+
+- **Breaking:** `OPENPROJECT_ALLOWED_PROJECTS`/`_READ`/`_WRITE` no longer emit
+  a startup/`doctor` deprecation warning or get prefilled by `configure`.
+  These names have had no effect on the running server since 0.3.0; use
+  `OPENPROJECT_READ_PROJECTS`/`OPENPROJECT_WRITE_PROJECTS`.
+
 ## [0.4.0] - 2026-09-12
 
 Complete the layered `app/` architecture migration so the codebase can scale
@@ -149,10 +156,7 @@ broader OpenProject version compatibility.
   `OPENPROJECT_READ_PROJECTS`/`OPENPROJECT_WRITE_PROJECTS`, the individual
   `OPENPROJECT_ENABLE_<GROUP>_READ` flags, `OPENPROJECT_ENABLE_EXTENDED_READ`,
   and `OPENPROJECT_ENABLE_PERSONAL_WRITE`; the old auto-confirm flags have no
-  replacement. `OPENPROJECT_ALLOWED_PROJECTS`/`_READ`/`_WRITE` still emit a
-  one-time startup/`doctor` warning naming their replacement and are prefilled
-  by `configure`, unlike every other legacy name in this list — see
-  [Configuration](docs/configuration.md#legacy-configuration-migration).
+  replacement.
 
 ### Fixed
 
