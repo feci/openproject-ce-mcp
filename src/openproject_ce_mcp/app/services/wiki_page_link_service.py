@@ -197,7 +197,9 @@ class WikiPageLinkService:
         )
         return self._to_write_result("delete", outcome)
 
-    def _to_write_result(self, action: str, outcome: _WriteOutcome[WikiPageLinkSummary | None]) -> WikiPageLinkWriteResult:
+    def _to_write_result(
+        self, action: str, outcome: _WriteOutcome[WikiPageLinkSummary | None]
+    ) -> WikiPageLinkWriteResult:
         return WikiPageLinkWriteResult(
             action=action,
             state=outcome.state,

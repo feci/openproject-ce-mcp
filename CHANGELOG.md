@@ -42,6 +42,11 @@ development baseline.
   reach a commit even when confirmed, and error messages never carry
   upstream response data beyond OpenProject's own (already-trusted)
   validation text.
+- A versioned snapshot of the full ~190-tool MCP catalog (name, input
+  schema, output structure, read/write classification, and required
+  capability) now gates CI: any undeclared change to a tool's contract
+  fails the build until the snapshot is deliberately updated, treating the
+  tool surface as a public API ahead of a future 1.0.
 
 ### Changed
 

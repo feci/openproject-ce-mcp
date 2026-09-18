@@ -542,11 +542,7 @@ class AttachmentService:
                 resolved_id,
                 metadata={
                     "fileName": confirmed_file_info.file_name,
-                    **(
-                        {"description": {"format": "markdown", "raw": description}}
-                        if description is not None
-                        else {}
-                    ),
+                    **({"description": {"format": "markdown", "raw": description}} if description is not None else {}),
                 },
                 file_name=confirmed_file_info.file_name,
                 file_bytes=confirmed_file_info.file_bytes,

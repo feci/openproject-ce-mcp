@@ -141,6 +141,7 @@ class UserNonWorkingTimeService:
         if end_date is not None:
             hidden_fields.ensure_field_writable("user_non_working_time", "end_date", settings=self._settings)
             payload["endDate"] = end_date
+
         async def _commit(p: dict[str, Any]) -> UserNonWorkingTimeSummary:
             record = await call_version_gated(
                 lambda: self._api.update(user_ref, non_working_time_id, payload=p),

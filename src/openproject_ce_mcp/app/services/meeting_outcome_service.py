@@ -177,6 +177,7 @@ class MeetingOutcomeService:
         payload = await self._build_write_payload(
             agenda_item_id=agenda_item_id, kind=kind, notes=notes, work_package_id=work_package_id
         )
+
         async def _commit(p: dict[str, Any]) -> MeetingOutcomeSummary:
             record = await call_version_gated(lambda: self._api.create(p), feature="Meeting outcomes", floor="17.6")
             return self._stamp(record.summary)
@@ -213,6 +214,7 @@ class MeetingOutcomeService:
         payload = await self._build_write_payload(
             agenda_item_id=None, kind=kind, notes=notes, work_package_id=work_package_id
         )
+
         async def _commit(p: dict[str, Any]) -> MeetingOutcomeSummary:
             record = await call_version_gated(
                 lambda: self._api.update(outcome_id, p), feature="Meeting outcomes", floor="17.6"
@@ -248,7 +250,10 @@ class MeetingOutcomeService:
             confirm=confirm,
             payload=payload,
             validation_errors={},
-            identity={"outcome_id": outcome_summary.id, "meeting_agenda_item_id": outcome_summary.meeting_agenda_item_id},
+            identity={
+                "outcome_id": outcome_summary.id,
+                "meeting_agenda_item_id": outcome_summary.meeting_agenda_item_id,
+            },
             ensure_write_enabled=lambda: access.ensure_write_enabled("meeting", settings=self._settings),
             commit=_commit,
             committed_identity=lambda d: {"outcome_id": d.id, "meeting_agenda_item_id": d.meeting_agenda_item_id},

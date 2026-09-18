@@ -1739,7 +1739,10 @@ async def test_create_denies_write_when_parent_project_not_write_allowed() -> No
 
     class _ParentLookupApi:
         async def get(self, work_package_ref: str) -> dict:
-            return {"id": int(work_package_ref), "_links": {"project": {"href": "/api/v3/projects/20", "title": "Other"}}}
+            return {
+                "id": int(work_package_ref),
+                "_links": {"project": {"href": "/api/v3/projects/20", "title": "Other"}},
+            }
 
         async def get_by_href(self, href: str) -> dict:
             raise AssertionError("unused")
@@ -2500,7 +2503,10 @@ async def test_update_denies_write_when_new_parent_project_not_write_allowed() -
 
     class _NewParentLookupApi:
         async def get(self, work_package_ref: str) -> dict:
-            return {"id": int(work_package_ref), "_links": {"project": {"href": "/api/v3/projects/20", "title": "Other"}}}
+            return {
+                "id": int(work_package_ref),
+                "_links": {"project": {"href": "/api/v3/projects/20", "title": "Other"}},
+            }
 
         async def get_by_href(self, href: str) -> dict:
             raise AssertionError("unused")

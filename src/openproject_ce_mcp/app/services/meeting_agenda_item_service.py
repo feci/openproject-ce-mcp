@@ -223,6 +223,7 @@ class MeetingAgendaItemService:
             work_package_id=resolved_work_package_id,
             meeting_section_id=meeting_section_id,
         )
+
         async def _commit(p: dict[str, Any]) -> MeetingAgendaItemSummary:
             record = await call_version_gated(lambda: self._api.create(p), feature="Meeting agenda items", floor="17.6")
             return self._stamp(record.summary)
@@ -277,6 +278,7 @@ class MeetingAgendaItemService:
             work_package_id=resolved_work_package_id,
             meeting_section_id=meeting_section_id,
         )
+
         async def _commit(p: dict[str, Any]) -> MeetingAgendaItemSummary:
             record = await call_version_gated(
                 lambda: self._api.update(agenda_item_id, p), feature="Meeting agenda items", floor="17.6"
@@ -311,7 +313,9 @@ class MeetingAgendaItemService:
         payload = {"id": item.id, "title": item.title}
 
         async def _commit(p: dict[str, Any]) -> MeetingAgendaItemSummary:
-            await call_version_gated(lambda: self._api.delete(agenda_item_id), feature="Meeting agenda items", floor="17.6")
+            await call_version_gated(
+                lambda: self._api.delete(agenda_item_id), feature="Meeting agenda items", floor="17.6"
+            )
             return item
 
         outcome = await _finalize_write(
@@ -328,7 +332,9 @@ class MeetingAgendaItemService:
         )
         return self._to_write_result("delete", outcome)
 
-    def _to_write_result(self, action: str, outcome: _WriteOutcome[MeetingAgendaItemSummary]) -> MeetingAgendaItemWriteResult:
+    def _to_write_result(
+        self, action: str, outcome: _WriteOutcome[MeetingAgendaItemSummary]
+    ) -> MeetingAgendaItemWriteResult:
         return MeetingAgendaItemWriteResult(
             action=action,
             state=outcome.state,

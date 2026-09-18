@@ -148,6 +148,7 @@ class UserWorkingHoursService:
             if value is not None:
                 hidden_fields.ensure_field_writable("user_working_hours", field_name, settings=self._settings)
                 payload[wire_key] = value
+
         async def _commit(p: dict[str, Any]) -> UserWorkingHoursSummary:
             record = await call_version_gated(
                 lambda: self._api.create(
@@ -221,6 +222,7 @@ class UserWorkingHoursService:
             if value is not None:
                 hidden_fields.ensure_field_writable("user_working_hours", field_name, settings=self._settings)
                 payload[wire_key] = value
+
         async def _commit(p: dict[str, Any]) -> UserWorkingHoursSummary:
             record = await call_version_gated(
                 lambda: self._api.update(user_ref, working_hours_id, payload=p),
@@ -271,7 +273,9 @@ class UserWorkingHoursService:
         )
         return self._to_write_result("delete", outcome)
 
-    def _to_write_result(self, action: str, outcome: _WriteOutcome[UserWorkingHoursSummary | None]) -> UserWorkingHoursWriteResult:
+    def _to_write_result(
+        self, action: str, outcome: _WriteOutcome[UserWorkingHoursSummary | None]
+    ) -> UserWorkingHoursWriteResult:
         return UserWorkingHoursWriteResult(
             action=action,
             state=outcome.state,
