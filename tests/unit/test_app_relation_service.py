@@ -6,6 +6,7 @@ import pytest
 from _client_test_helpers import make_settings
 
 from openproject_ce_mcp.app.errors import InvalidInputError, OpenProjectServerError, PermissionDeniedError
+from openproject_ce_mcp.app.policies import scope as scope_policy
 from openproject_ce_mcp.app.ports.relation_api import RelationRecord
 from openproject_ce_mcp.app.services.relation_service import RelationService
 from openproject_ce_mcp.models import RelationSummary
@@ -668,6 +669,37 @@ async def test_create_denies_write_outside_source_project_allowlist_even_without
 
     with pytest.raises(PermissionDeniedError):
         await service.create(work_package_id=42, related_to_work_package_id=55, relation_type="blocks", confirm=False)
+
+
+@pytest.mark.asyncio
+async def test_create_denies_write_when_target_work_package_project_not_write_allowed() -> None:
+    """OPM-2706: the RELATION TARGET's own project must be write-authorized
+    too, not just the source's -- a caller with write access to the source's
+    project must not be able to link it to a work package in a project they
+    can only read. Unlike the existing resolve-was-called-with-write-True
+    tests, this uses a resolver that performs a REAL allowlist check
+    (mirroring WorkPackageResolver.resolve_id's actual
+    ensure_project_write_link_allowed call) instead of a fake that always
+    succeeds, so the denial actually has to propagate out of create()."""
+    api = _FakeRelationApi()
+    lookup = _FakeWorkPackageLookupApi(project_link={"href": "/api/v3/projects/1"})
+    settings = dataclasses.replace(make_settings(), read_projects=("*",), write_projects=("demo",))
+
+    async def resolve_denying_target(work_package_ref: int | str, *, write: bool = False) -> int:
+        if write:
+            scope_policy.ensure_project_write_link_allowed(
+                {"href": "/api/v3/projects/20"}, settings=settings, project_id_to_identifier=PROJECT_ID_TO_IDENTIFIER
+            )
+        return int(work_package_ref)
+
+    service = _service(
+        api=api, work_package_lookup_api=lookup, settings=settings, resolve_work_package_id=resolve_denying_target
+    )
+
+    with pytest.raises(PermissionDeniedError, match="OPENPROJECT_WRITE_PROJECTS"):
+        await service.create(work_package_id=42, related_to_work_package_id=55, relation_type="blocks", confirm=True)
+
+    assert api.create_calls == []
 
 
 @pytest.mark.asyncio

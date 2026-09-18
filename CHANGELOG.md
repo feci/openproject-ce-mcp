@@ -34,6 +34,14 @@ development baseline.
   PyPI publication, with pinned resource dependencies and a verified install
   on Apple Silicon and Intel; PyPI remains the source of truth and the tap's
   Formula is proposed automatically after each release.
+- Parametrized security-invariant tests now run across every registered
+  write/delete tool, proving a project-scoped write is denied outside
+  `OPENPROJECT_WRITE_PROJECTS`, a cross-referenced resource (e.g. a relation
+  target or a reparent target) is independently write-authorized rather than
+  inheriting the primary resource's scope, form validation errors never
+  reach a commit even when confirmed, and error messages never carry
+  upstream response data beyond OpenProject's own (already-trusted)
+  validation text.
 
 ### Changed
 

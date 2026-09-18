@@ -1,15 +1,21 @@
 """Registry-driven behavioral contracts for every registered
 write/delete MCP tool.
 
-Properties proven here, generically across all 55 tools in `WRITE_TOOL_CASES`
-(see `_write_contract_cases.py`):
+Properties proven here, generically across every tool in `WRITE_TOOL_CASES`
+(see `_write_contract_cases.py`; `test_every_registered_write_tool_has_a_contract_case`
+keeps that table exhaustive against the live tool registry, so no fixed count
+is cited here):
 
 (a) every write/delete tool returns a preview (requires_confirmation=True,
     confirmed=False) without confirm=true;
 (b) no mutating HTTP call happens while confirm=false;
 (c) authorization runs strictly before the mutating call, including for tools
     whose outer API contract absorbs the resulting error instead of
-    propagating it (the two bulk work-package tools).
+    propagating it (the two bulk work-package tools);
+(d) the same holds when the write is disabled at the capability-flag layer
+    (OPENPROJECT_ENABLE_<SCOPE>_WRITE) rather than the project-allowlist layer;
+(e) a project-scoped write tool is denied when its target project is outside
+    OPENPROJECT_WRITE_PROJECTS, for every scope with a project concept at all.
 
 What this file does NOT prove: that authorization precedes *every* follow-up
 request (several preview/form-based write paths deliberately issue their own
@@ -127,12 +133,58 @@ async def test_write_tool_denies_when_its_write_scope_is_disabled(case: WriteToo
     settings instead would leave a stale/empty attachment_root, and the call
     could fail on the file-path/root check before ever reaching the
     write-scope gate, proving nothing about authorization ordering.
+
+    This is also OPM-2706's proof of "no admin/personal-data write without
+    the matching capability flag" -- generalized here to every write scope
+    (not just admin/personal), so no separate capability-flag test exists.
     """
     materialized = materialize_case(case, tmp_path)
     disabled_settings = dataclasses.replace(materialized.settings, **{f"enable_{case.write_scope}_write": False})
     fn = _TOOL_FUNCTIONS[case.tool]
     client = OpenProjectClient(
         disabled_settings, transport=httpx.MockTransport(_handler_rejecting_the_write_request(case))
+    )
+    try:
+        if case.denial_mode == "raises":
+            with pytest.raises(RuntimeError, match=r"\[permission_denied\]"):
+                await fn(FakeContext(client), **materialized.kwargs, confirm=True)
+        else:
+            result = await fn(FakeContext(client), **materialized.kwargs, confirm=True)
+            assert result.items, case.tool
+            assert all(not item.success for item in result.items), case.tool
+            assert result.succeeded == 0, case.tool
+    finally:
+        await client.aclose()
+
+
+# Scopes with no project concept at all (verified: user_service.py,
+# group_service.py, user_preferences_service.py, user_working_hours_service.py,
+# and user_non_working_time_service.py contain zero ensure_project*/project-
+# link-resolution calls) -- OPENPROJECT_WRITE_PROJECTS is meaningless for
+# these, so they're excluded from the project-scope denial test below rather
+# than given a vacuous pass.
+_PROJECTLESS_WRITE_SCOPES = frozenset({"admin", "personal", "user_schedule"})
+
+_PROJECT_SCOPED_CASES = {
+    name: case for name, case in WRITE_TOOL_CASES.items() if case.write_scope not in _PROJECTLESS_WRITE_SCOPES
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", _PROJECT_SCOPED_CASES.values(), ids=list(_PROJECT_SCOPED_CASES.keys()))
+async def test_write_tool_denies_when_target_project_outside_write_projects_allowlist(
+    case: WriteToolCase, tmp_path
+) -> None:
+    """OPENPROJECT_WRITE_PROJECTS, not just the enable-flag layer above --
+    a project-scoped write tool must still be denied when its target
+    project isn't in the write allowlist, even with its write scope fully
+    enabled and every other setting left at the case's own permissive
+    default."""
+    materialized = materialize_case(case, tmp_path)
+    denied_settings = dataclasses.replace(materialized.settings, write_projects=("definitely-not-this-project",))
+    fn = _TOOL_FUNCTIONS[case.tool]
+    client = OpenProjectClient(
+        denied_settings, transport=httpx.MockTransport(_handler_rejecting_the_write_request(case))
     )
     try:
         if case.denial_mode == "raises":

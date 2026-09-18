@@ -1725,6 +1725,37 @@ async def test_create_resolves_parent_with_write_true() -> None:
 
 
 @pytest.mark.asyncio
+async def test_create_denies_write_when_parent_project_not_write_allowed() -> None:
+    """OPM-2706: the PARENT's own project must be write-authorized too, not
+    just the (about-to-be-created child's) `project` argument -- a caller
+    with write access to "demo" must not be able to attach a new child under
+    a parent work package in "other", which they can only read. Unlike
+    `test_create_resolves_parent_with_write_true` above, this uses the REAL
+    `WorkPackageResolver.resolve_id` (mirroring `ensure_project_write_link_
+    allowed`'s actual enforcement) instead of a fake resolver that always
+    succeeds, so the denial actually has to propagate out of create()."""
+    api = _FakeWorkPackageApi()
+    settings = dataclasses.replace(make_settings(), read_projects=("*",), write_projects=("demo",))
+
+    class _ParentLookupApi:
+        async def get(self, work_package_ref: str) -> dict:
+            return {"id": int(work_package_ref), "_links": {"project": {"href": "/api/v3/projects/20", "title": "Other"}}}
+
+        async def get_by_href(self, href: str) -> dict:
+            raise AssertionError("unused")
+
+    resolver = WorkPackageResolver(
+        api=_ParentLookupApi(), settings=settings, project_id_to_identifier=PROJECT_ID_TO_IDENTIFIER
+    )
+    service, _ = _service(api, settings=settings, resolve_work_package_id=resolver.resolve_id)
+
+    with pytest.raises(PermissionDeniedError, match="OPENPROJECT_WRITE_PROJECTS"):
+        await service.create(project="demo", type="Task", subject="Child", parent_work_package_id=6, confirm=True)
+
+    assert api.commit_create_calls == []
+
+
+@pytest.mark.asyncio
 async def test_create_target_versions_resolves_each_ref_once() -> None:
     api = _FakeWorkPackageApi()
     service, _ = _service(api)
@@ -2457,6 +2488,32 @@ async def test_update_resolves_parent_with_write_true_and_clear_parent_passes_th
     assert seen_write == []
     _, payload = api.validate_update_calls[-1]
     assert payload["_links"]["parent"]["href"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_denies_write_when_new_parent_project_not_write_allowed() -> None:
+    """OPM-2706: same reasoning as `test_create_denies_write_when_parent_project_not_write_allowed`,
+    for reparenting via update(). Uses the REAL `WorkPackageResolver.resolve_id`
+    instead of a fake resolver that always succeeds."""
+    api = _FakeWorkPackageApi()
+    settings = dataclasses.replace(make_settings(), read_projects=("*",), write_projects=("demo",))
+
+    class _NewParentLookupApi:
+        async def get(self, work_package_ref: str) -> dict:
+            return {"id": int(work_package_ref), "_links": {"project": {"href": "/api/v3/projects/20", "title": "Other"}}}
+
+        async def get_by_href(self, href: str) -> dict:
+            raise AssertionError("unused")
+
+    resolver = WorkPackageResolver(
+        api=_NewParentLookupApi(), settings=settings, project_id_to_identifier=PROJECT_ID_TO_IDENTIFIER
+    )
+    service, _ = _service(api, settings=settings, resolve_work_package_id=resolver.resolve_id)
+
+    with pytest.raises(PermissionDeniedError, match="OPENPROJECT_WRITE_PROJECTS"):
+        await service.update(work_package_id=6, parent_work_package_id=7, confirm=True)
+
+    assert api.commit_update_calls == []
 
 
 @pytest.mark.asyncio
