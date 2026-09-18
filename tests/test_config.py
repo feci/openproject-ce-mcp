@@ -400,6 +400,38 @@ def test_settings_from_env_accepts_debug_log_level() -> None:
     assert settings.log_level == "DEBUG"
 
 
+def test_settings_from_env_defaults_log_format_to_text() -> None:
+    settings = Settings.from_env(
+        {
+            "OPENPROJECT_BASE_URL": "https://op.example.com",
+            "OPENPROJECT_API_TOKEN": "token-value",
+        }
+    )
+    assert settings.log_format == "text"
+
+
+def test_settings_from_env_accepts_json_log_format_case_insensitively() -> None:
+    settings = Settings.from_env(
+        {
+            "OPENPROJECT_BASE_URL": "https://op.example.com",
+            "OPENPROJECT_API_TOKEN": "token-value",
+            "OPENPROJECT_LOG_FORMAT": "JSON",
+        }
+    )
+    assert settings.log_format == "json"
+
+
+def test_settings_from_env_rejects_invalid_log_format() -> None:
+    with pytest.raises(ConfigError, match="OPENPROJECT_LOG_FORMAT"):
+        Settings.from_env(
+            {
+                "OPENPROJECT_BASE_URL": "https://op.example.com",
+                "OPENPROJECT_API_TOKEN": "token-value",
+                "OPENPROJECT_LOG_FORMAT": "xml",
+            }
+        )
+
+
 def test_http_remote_base_url_warns(caplog) -> None:
     with caplog.at_level("WARNING"):
         settings = Settings.from_env(

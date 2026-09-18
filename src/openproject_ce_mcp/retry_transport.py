@@ -10,6 +10,8 @@ from email.utils import parsedate_to_datetime
 
 import httpx
 
+from . import http_request_counter
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -60,12 +62,14 @@ class RetryTransport(httpx.AsyncBaseTransport):
         # Only retry idempotent methods. PATCH is NOT retried because OpenProject
         # has at least one PATCH endpoint (emoji reactions) that is a toggle.
         if request.method not in {"GET", "HEAD", "OPTIONS", "PUT"}:
+            http_request_counter.increment()
             return await self._transport.handle_async_request(request)
 
         attempt = 0
 
         while attempt <= self._max_retries:
             try:
+                http_request_counter.increment()
                 response = await self._transport.handle_async_request(request)
 
                 if not self._is_retryable_status(response.status_code):

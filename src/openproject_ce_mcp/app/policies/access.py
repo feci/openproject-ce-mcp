@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ... import policy_observation
 from ...config import READ_SCOPE_ENV_VAR, Settings
 from ..errors import CapabilityDisabledError
 
@@ -20,7 +21,9 @@ _WRITE_SCOPE_ENV_VAR = {
 
 def ensure_write_enabled(scope: str, *, settings: Settings) -> None:
     if settings.write_enabled(scope):
+        policy_observation.record_policy_decision(f"{scope}_write_allowed")
         return
+    policy_observation.record_policy_decision(f"{scope}_write_denied")
     scope_env = _WRITE_SCOPE_ENV_VAR.get(scope, "the corresponding write-group setting")
     raise CapabilityDisabledError(
         f"OpenProject {scope.replace('_', ' ')} write support is disabled. "
@@ -30,7 +33,9 @@ def ensure_write_enabled(scope: str, *, settings: Settings) -> None:
 
 def ensure_read_enabled(scope: str, *, settings: Settings) -> None:
     if settings.read_enabled(scope):
+        policy_observation.record_policy_decision(f"{scope}_read_allowed")
         return
+    policy_observation.record_policy_decision(f"{scope}_read_denied")
     env_var = READ_SCOPE_ENV_VAR.get(scope, "the relevant OPENPROJECT_ENABLE_*_READ setting")
     raise CapabilityDisabledError(
         f"OpenProject {scope.replace('_', ' ')} read support is disabled. Set {env_var}=true to allow reads."

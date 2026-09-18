@@ -5,6 +5,7 @@ import dataclasses
 import pytest
 from _client_test_helpers import make_settings
 
+from openproject_ce_mcp import policy_observation
 from openproject_ce_mcp.app.errors import PermissionDeniedError, ProjectScopeDeniedError
 from openproject_ce_mcp.app.policies import scope
 
@@ -202,3 +203,71 @@ def test_ensure_project_write_link_allowed_if_present_denies_malformed_link_even
         scope.ensure_project_write_link_allowed_if_present(
             {"title": "Demo"}, settings=settings, project_id_to_identifier={}
         )
+
+
+# --- OPM-2709: project_scope/policy_decision observation --------------------
+
+
+def test_ensure_project_link_allowed_records_allowed_decision_and_scope_via_cache() -> None:
+    settings = dataclasses.replace(make_settings(), read_projects=("*",))
+    policy_observation.reset()
+    scope.ensure_project_link_allowed(
+        {"href": "/api/v3/projects/7", "title": "Demo"}, settings=settings, project_id_to_identifier={7: "DEMO"}
+    )
+    assert policy_observation.current_policy_decision() == "project_scope_read_allowed"
+    assert policy_observation.current_project_scope() == "DEMO"
+
+
+def test_ensure_project_link_allowed_records_denied_decision_and_falls_back_to_numeric_id() -> None:
+    settings = dataclasses.replace(make_settings(), read_projects=("other",))
+    policy_observation.reset()
+    with pytest.raises(ProjectScopeDeniedError):
+        scope.ensure_project_link_allowed(
+            {"href": "/api/v3/projects/7", "title": "Demo"}, settings=settings, project_id_to_identifier={}
+        )
+    assert policy_observation.current_policy_decision() == "project_scope_read_denied"
+    assert policy_observation.current_project_scope() == "7"
+
+
+def test_ensure_project_write_link_allowed_records_write_flavored_decision_on_success() -> None:
+    """Internally calls the already-decorated ensure_project_link_allowed
+    first (a harmless double-recording, see scope.py's own inline comment)
+    -- the outer write-flavored decision must be what's left standing."""
+    settings = dataclasses.replace(make_settings(), read_projects=("*",), write_projects=("*",))
+    policy_observation.reset()
+    scope.ensure_project_write_link_allowed(
+        {"href": "/api/v3/projects/7", "title": "Demo"}, settings=settings, project_id_to_identifier={7: "DEMO"}
+    )
+    assert policy_observation.current_policy_decision() == "project_scope_write_allowed"
+    assert policy_observation.current_project_scope() == "DEMO"
+
+
+def test_ensure_project_link_allowed_if_present_records_allowed_for_legitimately_absent_link() -> None:
+    settings = dataclasses.replace(make_settings(), read_projects=("*",))
+    policy_observation.reset()
+    scope.ensure_project_link_allowed_if_present(None, settings=settings, project_id_to_identifier={})
+    assert policy_observation.current_policy_decision() == "project_scope_read_allowed"
+    assert policy_observation.current_project_scope() is None
+
+
+def test_second_check_with_unresolvable_scope_does_not_inherit_first_checks_scope() -> None:
+    """Regression test: a call that checks two project-scope links in
+    sequence (e.g. a relation's source, then target) must not have its
+    second check's None project_scope silently masked by the first check's
+    resolved value -- a human debugging a denial would otherwise see the
+    wrong (already-allowed) project name next to the real denial."""
+    settings = dataclasses.replace(make_settings(), read_projects=("*",))
+    policy_observation.reset()
+
+    scope.ensure_project_link_allowed(
+        {"href": "/api/v3/projects/7", "title": "Demo"}, settings=settings, project_id_to_identifier={7: "DEMO"}
+    )
+    assert policy_observation.current_project_scope() == "DEMO"
+
+    settings_restrictive = dataclasses.replace(make_settings(), read_projects=("other",))
+    with pytest.raises(ProjectScopeDeniedError):
+        scope.ensure_project_link_allowed(
+            {"title": "Demo, no href key at all"}, settings=settings_restrictive, project_id_to_identifier={}
+        )
+    assert policy_observation.current_policy_decision() == "project_scope_read_denied"
+    assert policy_observation.current_project_scope() is None

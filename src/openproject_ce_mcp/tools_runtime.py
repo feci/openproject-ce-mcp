@@ -9,10 +9,13 @@ categorization, and the return-model/select-trimming machinery.
 
 Strictly one-directional: this module never imports from `tools.py`, any
 `tools_<domain>.py`, or `app/` -- it only imports from `.client`, `.models`,
-`.presentation`, and stdlib/`mcp`. Which tools exist and which scope/policy
-gates them is Catalog/Policy concern, owned by `tools.py`, not this module --
-`register_selected_tools()` takes an already-decided iterable of tool names,
-never `Settings` or the classification tables themselves.
+`.presentation`, `.http_request_counter`/`.policy_observation`/
+`.logging_support` (OPM-2709's structured-logging plumbing, also
+package-root modules, not `app/`), and stdlib/`mcp`. Which tools exist and
+which scope/policy gates them is Catalog/Policy concern, owned by `tools.py`,
+not this module -- `register_selected_tools()` takes an already-decided
+iterable of tool names, never `Settings` or the classification tables
+themselves.
 """
 
 from __future__ import annotations
@@ -22,29 +25,22 @@ import inspect
 import json
 import logging
 import re
+import time
 from collections.abc import Callable, Iterable
 from dataclasses import fields as dataclass_fields
 from dataclasses import is_dataclass
-from typing import Any, TypeVar, cast
+from typing import Any, Literal, TypeVar, cast
 
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import TextContent
 
+from . import http_request_counter, policy_observation
 from .client import (
-    AuthenticationError,
-    CapabilityDisabledError,
-    ConflictError,
     InvalidInputError,
-    NotFoundError,
     OpenProjectClient,
     OpenProjectError,
-    OpenProjectPermissionDeniedError,
-    OpenProjectServerError,
-    PermissionDeniedError,
-    ProjectScopeDeniedError,
-    RateLimitedError,
-    TransportError,
 )
+from .logging_support import ToolCallLogRecord
 from .presentation import ContentBundle, _to_payload
 
 LOGGER = logging.getLogger(__name__)
@@ -159,24 +155,10 @@ def _client_from_context(ctx: Context) -> OpenProjectClient:
 # leads the message, which stays human-readable, e.g.
 #   "[PROJECT_SCOPE_DENIED] OpenProject writes to this project are disabled..."
 #
-# Dict iteration order matters: `_categorize_openproject_error` walks this in
-# order and takes the first isinstance match, so every PermissionDeniedError
-# SUBCLASS must be listed before the bare PermissionDeniedError fallback
-# entry, or a subclass instance would incorrectly match the fallback first.
-_ERROR_CATEGORY: dict[type[Exception], str] = {
-    InvalidInputError: "VALIDATION_FAILED",
-    AuthenticationError: "AUTHENTICATION_FAILED",
-    ProjectScopeDeniedError: "PROJECT_SCOPE_DENIED",
-    CapabilityDisabledError: "CAPABILITY_DISABLED",
-    OpenProjectPermissionDeniedError: "OPENPROJECT_PERMISSION_DENIED",
-    PermissionDeniedError: "PROJECT_SCOPE_DENIED",  # base fallback, pre-subclass call sites
-    NotFoundError: "RESOURCE_NOT_FOUND",
-    ConflictError: "CONFLICT",
-    RateLimitedError: "RATE_LIMITED",
-    TransportError: "NETWORK_ERROR",
-    OpenProjectServerError: "OPENPROJECT_UNAVAILABLE",
-    OpenProjectError: "OPENPROJECT_UNAVAILABLE",  # base fallback
-}
+# The code/layer themselves live on each exception class (app/errors.py's
+# `code`/`layer` ClassVars) -- this module only formats/dispatches, it is not
+# the source of truth for the mapping (see app/errors.py's module docstring
+# for why that's the cleaner home for it than a lookup table here).
 _CATEGORY_PREFIX_RE = re.compile(r"^\[[A-Z_]+\]\s")
 
 
@@ -193,15 +175,22 @@ def _categorize_openproject_error(exc: OpenProjectError) -> ValueError | Runtime
     and `_categorize_tool_errors`'s catch-all (the sanitization backstop) --
     an OpenProjectError reaching either point must get its own real code,
     never be folded into a generic INTERNAL_ERROR.
+
+    The returned exception carries `.code`/`.layer` attributes (copied from
+    `exc`, not re-derived) so `_categorize_tool_errors`'s outer wrapper can
+    read them straight off whatever it catches (a plain `RuntimeError`/
+    `ValueError` by the time it gets there) for OPM-2709's structured log
+    line, without parsing the `[CODE]`-prefixed message string back apart.
     """
+    translated: ValueError | RuntimeError
     if isinstance(exc, InvalidInputError):
         # Validation failures surface as ValueError; everything else as RuntimeError.
-        return ValueError(_prefix("VALIDATION_FAILED", str(exc)))
-    category = next(
-        (cat for typ, cat in _ERROR_CATEGORY.items() if isinstance(exc, typ)),
-        "OPENPROJECT_UNAVAILABLE",
-    )
-    return RuntimeError(_prefix(category, str(exc)))
+        translated = ValueError(_prefix(exc.code, str(exc)))
+    else:
+        translated = RuntimeError(_prefix(exc.code, str(exc)))
+    translated.code = exc.code  # type: ignore[union-attr]
+    translated.layer = exc.layer  # type: ignore[union-attr]
+    return translated
 
 
 async def _run_tool(awaitable):
@@ -312,23 +301,72 @@ def _categorize_tool_errors(fn):
 
     @functools.wraps(fn)
     async def wrapper(*args, **kwargs):
+        http_request_counter.reset()
+        policy_observation.reset()
+        # The real MCP SDK dispatch path calls every tool via fn(**kwargs) only
+        # (mcp.server.mcpserver.utilities.func_metadata.call_fn_with_arg_validation),
+        # never positionally -- ctx (every tool's context parameter is named
+        # exactly this, never a different name or position) is always a kwarg
+        # in production. args is only ever non-empty when a test calls the
+        # wrapped function directly and positionally.
+        ctx = kwargs.get("ctx", args[0] if args else None)
+        request_id = getattr(ctx, "request_id", None)
+        start = time.monotonic()
+        error_code: str | None = None
+        layer: str | None = None
         try:
-            return await fn(*args, **kwargs)
+            result = await fn(*args, **kwargs)
         except ValueError as exc:
+            error_code, layer = "VALIDATION_FAILED", "validation"
+            _emit_tool_call_log(fn.__name__, "error", start, error_code, layer, request_id, LOGGER.warning)
             raise ValueError(_prefix("VALIDATION_FAILED", str(exc))) from exc
-        except RuntimeError:
-            # Already coded by _run_tool inside `fn` -- must not be
-            # re-wrapped into a generic error, which would destroy the real
-            # classification a caller further down already produced.
+        except RuntimeError as exc:
+            # Already coded by _run_tool inside `fn` via _categorize_openproject_error,
+            # which attaches .code/.layer to exactly this exception instance --
+            # must not be re-wrapped into a generic error (which would destroy
+            # the real classification), just logged and re-raised as-is.
+            error_code = getattr(exc, "code", None)
+            layer = getattr(exc, "layer", None)
+            _emit_tool_call_log(fn.__name__, "error", start, error_code, layer, request_id, LOGGER.warning)
             raise
         except OpenProjectError as exc:
             # Some tool body calls a raising API directly without going
             # through _run_tool -- give it its own real code via the same
             # categorization _run_tool itself uses, rather than falling
             # through to the generic INTERNAL_ERROR case below.
+            error_code, layer = exc.code, exc.layer
+            _emit_tool_call_log(fn.__name__, "error", start, error_code, layer, request_id, LOGGER.warning)
             raise _categorize_openproject_error(exc) from exc
         except Exception as exc:
+            error_code, layer = "INTERNAL_ERROR", "internal"
             LOGGER.exception("Unhandled exception in tool %s", fn.__name__)
+            _emit_tool_call_log(fn.__name__, "error", start, error_code, layer, request_id, LOGGER.warning)
             raise RuntimeError(_prefix("INTERNAL_ERROR", "An internal error occurred.")) from exc
+        else:
+            _emit_tool_call_log(fn.__name__, "success", start, None, None, request_id, LOGGER.info)
+            return result
 
     return wrapper
+
+
+def _emit_tool_call_log(
+    tool: str,
+    status: Literal["success", "error"],
+    start: float,
+    error_code: str | None,
+    layer: str | None,
+    request_id: Any,
+    log: Callable[..., None],
+) -> None:
+    record: ToolCallLogRecord = {
+        "tool": tool,
+        "status": status,
+        "duration_ms": int((time.monotonic() - start) * 1000),
+        "error_code": error_code,
+        "layer": layer,
+        "http_requests": http_request_counter.current(),
+        "project_scope": policy_observation.current_project_scope(),
+        "policy_decision": policy_observation.current_policy_decision(),
+        "request_id": str(request_id) if request_id is not None else None,
+    }
+    log("tool_call", extra={"structured": record})

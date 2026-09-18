@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
+from .logging_support import build_formatter
+
 
 class ConfigError(ValueError):
     """Raised when environment configuration is missing or invalid."""
@@ -241,6 +243,7 @@ class Settings:
     max_retries: int = 3
     retry_base_delay: float = 1.0
     retry_max_delay: float = 60.0
+    log_format: str = "text"
 
     def read_enabled(self, scope: str) -> bool:
         try:
@@ -309,6 +312,7 @@ class Settings:
         max_page_size = _int_env(env, "OPENPROJECT_MAX_PAGE_SIZE", default=50, minimum=1)
         max_results = _int_env(env, "OPENPROJECT_MAX_RESULTS", default=100, minimum=1)
         log_level = _parse_log_level(env.get("OPENPROJECT_LOG_LEVEL"), "OPENPROJECT_LOG_LEVEL", default="WARNING")
+        log_format = _parse_log_format(env.get("OPENPROJECT_LOG_FORMAT"), "OPENPROJECT_LOG_FORMAT", default="text")
         text_limit = _int_env(env, "OPENPROJECT_TEXT_LIMIT", default=DEFAULT_TEXT_LIMIT, minimum=1)
         if text_limit > TEXT_LIMIT_MAX:
             raise ConfigError(f"OPENPROJECT_TEXT_LIMIT must not exceed {TEXT_LIMIT_MAX}.")
@@ -378,6 +382,7 @@ class Settings:
             max_page_size=max_page_size,
             max_results=max_results,
             log_level=log_level,
+            log_format=log_format,
             text_limit=text_limit,
             read_projects=read_projects,
             write_projects=write_projects,
@@ -413,15 +418,16 @@ class Settings:
         )
 
 
-def configure_logging(level: str) -> None:
+def configure_logging(level: str, log_format: str = "text") -> None:
     numeric_level = getattr(logging, level.upper(), logging.WARNING)
-    logging.basicConfig(
-        level=numeric_level,
-        format="%(levelname)s %(name)s %(message)s",
-    )
+    logging.basicConfig(level=numeric_level)
     # basicConfig is a no-op once a handler is already installed (e.g. by MCPServer),
     # so set the level explicitly to make it actually take effect.
-    logging.getLogger().setLevel(numeric_level)
+    root = logging.getLogger()
+    root.setLevel(numeric_level)
+    formatter = build_formatter(log_format)
+    for handler in root.handlers:
+        handler.setFormatter(formatter)
 
 
 def _require_non_empty(value: str | None, name: str) -> str:
@@ -518,6 +524,16 @@ def _parse_log_level(value: str | None, name: str, *, default: str) -> str:
         return default
     normalized = value.strip().upper()
     allowed = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}
+    if normalized not in allowed:
+        raise ConfigError(f"{name} must be one of: {', '.join(sorted(allowed))}.")
+    return normalized
+
+
+def _parse_log_format(value: str | None, name: str, *, default: str) -> str:
+    if value is None or not value.strip():
+        return default
+    normalized = value.strip().lower()
+    allowed = {"text", "json"}
     if normalized not in allowed:
         raise ConfigError(f"{name} must be one of: {', '.join(sorted(allowed))}.")
     return normalized

@@ -14,6 +14,7 @@ from mcp.server.mcpserver import MCPServer
 from . import __version__
 from .client import OpenProjectClient
 from .config import ConfigError, Settings, configure_logging
+from .logging_support import build_formatter
 from .strict_mcpserver import StrictMCPServer, verify_strict_dispatch
 from .tools import register_tools
 
@@ -121,7 +122,7 @@ class AppContext:
 def create_app(settings: Settings) -> StrictMCPServer:
     @asynccontextmanager
     async def app_lifespan(_: MCPServer) -> AsyncIterator[AppContext]:
-        configure_logging(settings.log_level)
+        configure_logging(settings.log_level, settings.log_format)
         client = OpenProjectClient(settings)
         await client.initialize()
         try:
@@ -153,8 +154,13 @@ def create_app(settings: Settings) -> StrictMCPServer:
     # Force the root logger level explicitly. basicConfig (used by both MCPServer and
     # our configure_logging) is a no-op once a handler exists, so an explicit
     # setLevel is what actually holds the configured level regardless of install
-    # order.
+    # order. Same reasoning for the formatter: the SDK's own configure_logging
+    # already installed a handler by the time StrictMCPServer() above returns,
+    # so setting it here (not just inside app_lifespan, which only runs once a
+    # client actually connects) covers a log call made before that point too.
     logging.getLogger().setLevel(getattr(logging, settings.log_level))
+    for handler in logging.getLogger().handlers:
+        handler.setFormatter(build_formatter(settings.log_format))
     register_tools(mcp, settings)
     return mcp
 

@@ -36,12 +36,14 @@ link is never the same thing as "deliberately no link".
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Callable
 from enum import Enum, auto
 from fnmatch import fnmatch
 from typing import Any
 from urllib.parse import unquote
 
+from ... import policy_observation
 from ...config import Settings
 from ..errors import PermissionDeniedError, ProjectScopeDeniedError
 
@@ -120,6 +122,22 @@ def _slug_from_href(href: str | None) -> str | None:
         return unquote(slug) or None
     except IndexError:
         return None
+
+
+def _project_scope_display(link: Any, *, project_id_to_identifier: dict[int, str]) -> str | None:
+    """A single, unambiguous display value for the OPM-2709 `project_scope`
+    log field -- the project's own known identifier if this server has
+    already learned it, else its numeric id from the link's own href. Never
+    the link's `title` (a display name, not stable/unique) and never derived
+    from `project_candidates`' full candidate set (that set exists for
+    allowlist MATCHING, where over-including aliases is safe; a log field
+    wants exactly one value, not a set)."""
+    if not isinstance(link, dict):
+        return None
+    project_id = id_from_href(link.get("href"))
+    if project_id is None:
+        return None
+    return project_id_to_identifier.get(project_id) or str(project_id)
 
 
 def scope_allows_all(values: tuple[str, ...]) -> bool:
@@ -218,6 +236,31 @@ def project_link_payload_allowed(
     )
 
 
+def _observe_project_scope_check(fn):
+    """Decorator: records `project_scope` (unconditionally, since the link is
+    known regardless of outcome) and `policy_decision` (allowed/denied, based
+    on whether `fn` raised) around one of the four ensure_*_allowed(_if_present)
+    functions below -- keeps that bookkeeping out of each function's own
+    multiple return/raise points, none of which need to change to add it."""
+
+    @functools.wraps(fn)
+    def wrapper(link: Any, *, settings: Settings, project_id_to_identifier: dict[int, str]) -> None:
+        policy_observation.record_project_scope(
+            _project_scope_display(link, project_id_to_identifier=project_id_to_identifier)
+        )
+        decision_prefix = "write" if "write" in fn.__name__ else "read"
+        try:
+            fn(link, settings=settings, project_id_to_identifier=project_id_to_identifier)
+        except ProjectScopeDeniedError:
+            policy_observation.record_policy_decision(f"project_scope_{decision_prefix}_denied")
+            raise
+        else:
+            policy_observation.record_policy_decision(f"project_scope_{decision_prefix}_allowed")
+
+    return wrapper
+
+
+@_observe_project_scope_check
 def ensure_project_link_allowed(link: Any, *, settings: Settings, project_id_to_identifier: dict[int, str]) -> None:
     """REQUIRED-project-link contract: for resource types whose
     representer always emits a project link (a real one, or OpenProject's own
@@ -242,9 +285,17 @@ def ensure_project_link_allowed(link: Any, *, settings: Settings, project_id_to_
         raise ProjectScopeDeniedError("OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS.")
 
 
+@_observe_project_scope_check
 def ensure_project_write_link_allowed(
     link: Any, *, settings: Settings, project_id_to_identifier: dict[int, str]
 ) -> None:
+    # ensure_project_link_allowed is called as a plain function here (module-
+    # level name, already decorated) -- this nested call also records its own
+    # project_scope/policy_decision pair, immediately overwritten by this
+    # (outer, write-flavored) decorator's own recording once this function
+    # returns/raises. That's fine: both checks target the same link/project,
+    # so the values only ever differ in the read-vs-write decision suffix,
+    # and the outer (write) decision is what actually decided this call.
     ensure_project_link_allowed(link, settings=settings, project_id_to_identifier=project_id_to_identifier)
     state = classify_project_link(link)
     if state is LinkState.UNDISCLOSED:
@@ -258,6 +309,7 @@ def ensure_project_write_link_allowed(
         raise ProjectScopeDeniedError("OpenProject writes to this project are disabled by OPENPROJECT_WRITE_PROJECTS.")
 
 
+@_observe_project_scope_check
 def ensure_project_link_allowed_if_present(
     link: Any, *, settings: Settings, project_id_to_identifier: dict[int, str]
 ) -> None:
@@ -284,6 +336,7 @@ def ensure_project_link_allowed_if_present(
         raise ProjectScopeDeniedError("OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS.")
 
 
+@_observe_project_scope_check
 def ensure_project_write_link_allowed_if_present(
     link: Any, *, settings: Settings, project_id_to_identifier: dict[int, str]
 ) -> None:
