@@ -20,6 +20,7 @@ from __future__ import annotations
 import functools
 import inspect
 import json
+import logging
 import re
 from collections.abc import Callable, Iterable
 from dataclasses import fields as dataclass_fields
@@ -31,15 +32,22 @@ from mcp.types import TextContent
 
 from .client import (
     AuthenticationError,
+    CapabilityDisabledError,
+    ConflictError,
     InvalidInputError,
     NotFoundError,
     OpenProjectClient,
     OpenProjectError,
+    OpenProjectPermissionDeniedError,
     OpenProjectServerError,
     PermissionDeniedError,
+    ProjectScopeDeniedError,
+    RateLimitedError,
     TransportError,
 )
 from .presentation import ContentBundle, _to_payload
+
+LOGGER = logging.getLogger(__name__)
 
 # Resolves every classified tool name (via @register_tool below) to its
 # actual function object. Explicit registration, not module-namespace
@@ -146,20 +154,30 @@ def _client_from_context(ctx: Context) -> OpenProjectClient:
     return app_context.client
 
 
-# Stable, machine-readable category prefixes so a calling agent can branch on the
-# kind of failure rather than parsing free text. The prefix leads the message,
-# which stays human-readable, e.g.
-#   "[permission_denied] OpenProject work package write support is disabled. ..."
+# Stable, machine-readable, agent-facing error codes (ARCH-05's three-tier
+# translation scheme funnels every failure into one of these). The prefix
+# leads the message, which stays human-readable, e.g.
+#   "[PROJECT_SCOPE_DENIED] OpenProject writes to this project are disabled..."
+#
+# Dict iteration order matters: `_categorize_openproject_error` walks this in
+# order and takes the first isinstance match, so every PermissionDeniedError
+# SUBCLASS must be listed before the bare PermissionDeniedError fallback
+# entry, or a subclass instance would incorrectly match the fallback first.
 _ERROR_CATEGORY: dict[type[Exception], str] = {
-    InvalidInputError: "validation_error",
-    AuthenticationError: "auth_error",
-    PermissionDeniedError: "permission_denied",
-    NotFoundError: "not_found",
-    TransportError: "transport_error",
-    OpenProjectServerError: "server_error",
-    OpenProjectError: "openproject_error",  # base fallback
+    InvalidInputError: "VALIDATION_FAILED",
+    AuthenticationError: "AUTHENTICATION_FAILED",
+    ProjectScopeDeniedError: "PROJECT_SCOPE_DENIED",
+    CapabilityDisabledError: "CAPABILITY_DISABLED",
+    OpenProjectPermissionDeniedError: "OPENPROJECT_PERMISSION_DENIED",
+    PermissionDeniedError: "PROJECT_SCOPE_DENIED",  # base fallback, pre-subclass call sites
+    NotFoundError: "RESOURCE_NOT_FOUND",
+    ConflictError: "CONFLICT",
+    RateLimitedError: "RATE_LIMITED",
+    TransportError: "NETWORK_ERROR",
+    OpenProjectServerError: "OPENPROJECT_UNAVAILABLE",
+    OpenProjectError: "OPENPROJECT_UNAVAILABLE",  # base fallback
 }
-_CATEGORY_PREFIX_RE = re.compile(r"^\[[a-z_]+\]\s")
+_CATEGORY_PREFIX_RE = re.compile(r"^\[[A-Z_]+\]\s")
 
 
 def _prefix(category: str, message: str) -> str:
@@ -168,18 +186,29 @@ def _prefix(category: str, message: str) -> str:
     return f"[{category}] {message}"
 
 
+def _categorize_openproject_error(exc: OpenProjectError) -> ValueError | RuntimeError:
+    """Map any OpenProjectError to its coded, agent-facing exception.
+
+    Shared by `_run_tool` (the normal path, wrapping a client/service call)
+    and `_categorize_tool_errors`'s catch-all (the sanitization backstop) --
+    an OpenProjectError reaching either point must get its own real code,
+    never be folded into a generic INTERNAL_ERROR.
+    """
+    if isinstance(exc, InvalidInputError):
+        # Validation failures surface as ValueError; everything else as RuntimeError.
+        return ValueError(_prefix("VALIDATION_FAILED", str(exc)))
+    category = next(
+        (cat for typ, cat in _ERROR_CATEGORY.items() if isinstance(exc, typ)),
+        "OPENPROJECT_UNAVAILABLE",
+    )
+    return RuntimeError(_prefix(category, str(exc)))
+
+
 async def _run_tool(awaitable):
     try:
         return await awaitable
-    except InvalidInputError as exc:
-        # Validation failures surface as ValueError; everything else as RuntimeError.
-        raise ValueError(_prefix("validation_error", str(exc))) from exc
     except OpenProjectError as exc:
-        category = next(
-            (cat for typ, cat in _ERROR_CATEGORY.items() if isinstance(exc, typ)),
-            "openproject_error",
-        )
-        raise RuntimeError(_prefix(category, str(exc))) from exc
+        raise _categorize_openproject_error(exc) from exc
 
 
 def _return_model(fn: Any) -> type | None:
@@ -264,12 +293,21 @@ def _normalize_select(select: Any) -> frozenset[str] | None:
 
 
 def _categorize_tool_errors(fn):
-    """Wrap a tool so every failure carries a category prefix.
+    """Wrap a tool so every failure carries a stable, coded prefix.
 
-    _run_tool already prefixes errors from the client call, but input validators
-    in the tool body raise plain ValueError *before* _run_tool runs. This wrapper
-    catches those and tags them [validation_error] too, so an agent sees a
-    consistent, machine-readable category for every tool failure.
+    _run_tool already codes errors from the client/service call, but input
+    validators in the tool body raise plain ValueError *before* _run_tool
+    runs -- this wrapper catches those and tags them [VALIDATION_FAILED] too.
+
+    Also the sanitization backstop: any OTHER exception (a bug -- KeyError,
+    AttributeError, anything not already a typed OpenProjectError/ValueError)
+    is caught here and replaced with a generic, sanitized [INTERNAL_ERROR]
+    message -- the original exception's own message is never sent to the
+    client, only logged locally, since it could contain arbitrary internal
+    detail (a variable's value, an internal path, etc.). `except Exception`,
+    never bare `except:` -- BaseException subclasses (CancelledError,
+    KeyboardInterrupt, SystemExit) are never caught here and propagate
+    exactly as they already do through the MCP SDK's own dispatch boundary.
     """
 
     @functools.wraps(fn)
@@ -277,6 +315,20 @@ def _categorize_tool_errors(fn):
         try:
             return await fn(*args, **kwargs)
         except ValueError as exc:
-            raise ValueError(_prefix("validation_error", str(exc))) from exc
+            raise ValueError(_prefix("VALIDATION_FAILED", str(exc))) from exc
+        except RuntimeError:
+            # Already coded by _run_tool inside `fn` -- must not be
+            # re-wrapped into a generic error, which would destroy the real
+            # classification a caller further down already produced.
+            raise
+        except OpenProjectError as exc:
+            # Some tool body calls a raising API directly without going
+            # through _run_tool -- give it its own real code via the same
+            # categorization _run_tool itself uses, rather than falling
+            # through to the generic INTERNAL_ERROR case below.
+            raise _categorize_openproject_error(exc) from exc
+        except Exception as exc:
+            LOGGER.exception("Unhandled exception in tool %s", fn.__name__)
+            raise RuntimeError(_prefix("INTERNAL_ERROR", "An internal error occurred.")) from exc
 
     return wrapper

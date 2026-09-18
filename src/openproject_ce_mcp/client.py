@@ -62,18 +62,24 @@ from .app.adapters.httpx_work_package_api import HttpxWorkPackageApi
 from .app.adapters.httpx_work_package_lookup_api import HttpxWorkPackageLookupApi
 from .app.caches import SingletonCache
 
-# AuthenticationError/PermissionDeniedError: not referenced directly in this
-# module, but re-exported deliberately -- existing callers/tests import them
-# from here (e.g. `from openproject_ce_mcp.client import
-# PermissionDeniedError`, used by tests/integration/test_work_packages.py among
-# others) and must keep working.
+# AuthenticationError/PermissionDeniedError/its three OPM-2708 subclasses
+# (CapabilityDisabledError/ProjectScopeDeniedError/OpenProjectPermissionDeniedError)
+# /ConflictError/RateLimitedError: not referenced directly in this module, but
+# re-exported deliberately -- existing callers/tests import them from here
+# (e.g. `from openproject_ce_mcp.client import PermissionDeniedError`, used by
+# tests/integration/test_work_packages.py among others) and must keep working.
 from .app.errors import (
     AuthenticationError,  # noqa: F401
+    CapabilityDisabledError,  # noqa: F401
+    ConflictError,  # noqa: F401
     InvalidInputError,  # noqa: F401
     NotFoundError,  # noqa: F401
     OpenProjectError,
+    OpenProjectPermissionDeniedError,  # noqa: F401
     OpenProjectServerError,
     PermissionDeniedError,  # noqa: F401
+    ProjectScopeDeniedError,  # noqa: F401
+    RateLimitedError,  # noqa: F401
     TransportError,
 )
 from .app.pagination import (

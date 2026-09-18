@@ -5,7 +5,7 @@ import dataclasses
 import pytest
 from _client_test_helpers import make_settings
 
-from openproject_ce_mcp.app.errors import InvalidInputError, PermissionDeniedError
+from openproject_ce_mcp.app.errors import CapabilityDisabledError, InvalidInputError, PermissionDeniedError
 from openproject_ce_mcp.app.ports.attachment_api import AttachmentContent, AttachmentRecord
 from openproject_ce_mcp.app.services.attachment_service import AttachmentService
 from openproject_ce_mcp.models import AttachmentSummary
@@ -401,6 +401,22 @@ async def test_create_rejects_hidden_description_field_only_when_description_giv
 
     with pytest.raises(InvalidInputError, match="description"):
         await service.create(work_package_id=9, file_path=str(report), description="notes", confirm=False)
+
+
+@pytest.mark.asyncio
+async def test_create_denies_upload_when_attachment_root_not_configured(tmp_path) -> None:
+    """OPM-2708: OPENPROJECT_ATTACHMENT_ROOT unset is a deployment-config
+    denial (CapabilityDisabledError), not a project-scope denial -- distinct
+    from every other PermissionDeniedError-family assertion in this file,
+    which are all project-allowlist/resolver denials."""
+    api = _FakeAttachmentApi()
+    settings = dataclasses.replace(make_settings(), attachment_root="")
+    service = _service(api=api, settings=settings)
+
+    with pytest.raises(CapabilityDisabledError, match="OPENPROJECT_ATTACHMENT_ROOT is not set"):
+        await service.create(work_package_id=9, file_path=str(tmp_path / "report.pdf"), confirm=False)
+
+    assert api.create_calls == []
 
 
 @pytest.mark.asyncio

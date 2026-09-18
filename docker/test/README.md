@@ -178,4 +178,4 @@ the `TST-N` single-fetch paths return 200.
 This was originally mistaken for an upstream OpenProject bug; it is not — a
 lowercase-vs-uppercase identifier in semantic mode is the trigger, and the seed
 handles it. The MCP itself is unaffected either way (it surfaces any server-side
-failure as `[server_error]`).
+failure as `[OPENPROJECT_UNAVAILABLE]`).

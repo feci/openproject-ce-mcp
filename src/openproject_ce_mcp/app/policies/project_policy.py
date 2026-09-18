@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...config import Settings
-from ..errors import PermissionDeniedError
+from ..errors import ProjectScopeDeniedError
 from .scope import project_candidates, scope_allows_all, scope_matches_candidates
 
 
@@ -32,7 +32,7 @@ def ensure_project_read_allowed(
         project_id_to_identifier=project_id_to_identifier, project_ref=project_ref, payload=payload
     )
     if not scope_matches_candidates(settings.read_projects, candidates):
-        raise PermissionDeniedError("OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS.")
+        raise ProjectScopeDeniedError("OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS.")
 
 
 def ensure_project_write_allowed(
@@ -52,7 +52,7 @@ def ensure_project_write_allowed(
     if scope_allows_all(settings.write_projects):
         return
     if not scope_matches_candidates(settings.write_projects, candidates):
-        raise PermissionDeniedError("OpenProject writes to this project are disabled by OPENPROJECT_WRITE_PROJECTS.")
+        raise ProjectScopeDeniedError("OpenProject writes to this project are disabled by OPENPROJECT_WRITE_PROJECTS.")
 
 
 def ensure_project_create_target_allowed(
@@ -72,8 +72,8 @@ def ensure_project_create_target_allowed(
     if not scope_allows_all(settings.read_projects) and not scope_matches_candidates(
         settings.read_projects, candidates
     ):
-        raise PermissionDeniedError("OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS.")
+        raise ProjectScopeDeniedError("OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS.")
     if not scope_allows_all(settings.write_projects) and not scope_matches_candidates(
         settings.write_projects, candidates
     ):
-        raise PermissionDeniedError("OpenProject writes to this project are disabled by OPENPROJECT_WRITE_PROJECTS.")
+        raise ProjectScopeDeniedError("OpenProject writes to this project are disabled by OPENPROJECT_WRITE_PROJECTS.")

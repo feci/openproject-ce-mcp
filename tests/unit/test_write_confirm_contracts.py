@@ -146,7 +146,7 @@ async def test_write_tool_denies_when_its_write_scope_is_disabled(case: WriteToo
     )
     try:
         if case.denial_mode == "raises":
-            with pytest.raises(RuntimeError, match=r"\[permission_denied\]"):
+            with pytest.raises(RuntimeError, match=r"\[CAPABILITY_DISABLED\]"):
                 await fn(FakeContext(client), **materialized.kwargs, confirm=True)
         else:
             result = await fn(FakeContext(client), **materialized.kwargs, confirm=True)
@@ -188,7 +188,7 @@ async def test_write_tool_denies_when_target_project_outside_write_projects_allo
     )
     try:
         if case.denial_mode == "raises":
-            with pytest.raises(RuntimeError, match=r"\[permission_denied\]"):
+            with pytest.raises(RuntimeError, match=r"\[PROJECT_SCOPE_DENIED\]"):
                 await fn(FakeContext(client), **materialized.kwargs, confirm=True)
         else:
             result = await fn(FakeContext(client), **materialized.kwargs, confirm=True)

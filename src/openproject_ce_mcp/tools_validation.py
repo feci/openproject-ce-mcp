@@ -902,7 +902,7 @@ def _clearable_duration(value: str | None, *, field_name: str, sentinel: object)
 def _validate_select(select: list[str] | None, *, row_type: type) -> list[str] | None:
     """Validate a field-selection list against a result-row dataclass.
 
-    Called in the tool body so invalid field names raise [validation_error] before
+    Called in the tool body so invalid field names raise [VALIDATION_FAILED] before
     the client call. Returns the cleaned list (or None). The trimming wrapper
     (tools_runtime._normalize_select) reads the same ``select`` kwarg and applies
     it after the result resolves.

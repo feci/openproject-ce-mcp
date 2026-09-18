@@ -4,10 +4,12 @@ import pytest
 
 from openproject_ce_mcp.app.errors import (
     AuthenticationError,
+    ConflictError,
     InvalidInputError,
     NotFoundError,
     OpenProjectServerError,
     PermissionDeniedError,
+    RateLimitedError,
 )
 from openproject_ce_mcp.app.transport.errors import raise_for_status
 
@@ -51,10 +53,25 @@ def test_raise_for_status_404_raises_not_found_error() -> None:
         raise_for_status(404, {"message": "not found"})
 
 
-@pytest.mark.parametrize("status_code", [400, 409, 422])
+@pytest.mark.parametrize("status_code", [400, 422])
 def test_raise_for_status_4xx_raises_invalid_input_error_with_message(status_code: int) -> None:
     with pytest.raises(InvalidInputError, match="Filters Context malformed value"):
         raise_for_status(status_code, {"message": "Filters Context malformed value"})
+
+
+def test_raise_for_status_409_raises_conflict_error_with_message() -> None:
+    with pytest.raises(ConflictError, match="lockVersion is stale"):
+        raise_for_status(409, {"message": "lockVersion is stale"})
+
+
+def test_raise_for_status_409_without_a_message_has_a_generic_fallback() -> None:
+    with pytest.raises(ConflictError, match="OpenProject rejected the request due to a conflict."):
+        raise_for_status(409, {})
+
+
+def test_raise_for_status_429_raises_rate_limited_error() -> None:
+    with pytest.raises(RateLimitedError, match="OpenProject is rate-limiting this client."):
+        raise_for_status(429, {"message": "Too Many Requests"})
 
 
 def test_raise_for_status_5xx_raises_server_error() -> None:

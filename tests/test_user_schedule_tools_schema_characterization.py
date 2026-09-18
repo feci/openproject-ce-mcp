@@ -45,7 +45,7 @@ def test_list_user_non_working_times_schema() -> None:
         "List a user's per-user non-working-time date ranges (e.g. vacation),\n"
         "distinct from the instance-wide non-working days (list_non_working_days).\n\n"
         "Requires OpenProject 17.3+ (feature-flag-gated through 17.6, generally\n"
-        "available from 17.7). Earlier versions return a [server_error] for this\n"
+        "available from 17.7). Earlier versions return a [OPENPROJECT_UNAVAILABLE] for this\n"
         "endpoint — the route does not exist before 17.3.\n\n"
         "OpenProject enforces this at the API level: you may always view your own\n"
         'schedule (user_ref="me"); viewing another user\'s requires the\n'

@@ -49,7 +49,7 @@ async def list_user_non_working_times(
     distinct from the instance-wide non-working days (list_non_working_days).
 
     Requires OpenProject 17.3+ (feature-flag-gated through 17.6, generally
-    available from 17.7). Earlier versions return a [server_error] for this
+    available from 17.7). Earlier versions return a [OPENPROJECT_UNAVAILABLE] for this
     endpoint — the route does not exist before 17.3.
 
     OpenProject enforces this at the API level: you may always view your own

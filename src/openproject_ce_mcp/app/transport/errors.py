@@ -13,10 +13,12 @@ from typing import Any
 
 from ..errors import (
     AuthenticationError,
+    ConflictError,
     InvalidInputError,
     NotFoundError,
+    OpenProjectPermissionDeniedError,
     OpenProjectServerError,
-    PermissionDeniedError,
+    RateLimitedError,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -77,11 +79,15 @@ def raise_for_status(status_code: int, payload: dict[str, Any] | None) -> None:
         if "token" in top_level_message or "authenticate" in top_level_message:
             raise AuthenticationError("OpenProject authentication failed.")
         detail = f" ({message})" if message else ""
-        raise PermissionDeniedError(f"OpenProject denied access to this resource.{detail}")
+        raise OpenProjectPermissionDeniedError(f"OpenProject denied access to this resource.{detail}")
     if status_code == 404:
         raise NotFoundError("OpenProject resource not found.")
-    if status_code in {400, 409, 422}:
+    if status_code in {400, 422}:
         raise InvalidInputError(message or "OpenProject rejected the request.")
+    if status_code == 409:
+        raise ConflictError(message or "OpenProject rejected the request due to a conflict.")
+    if status_code == 429:
+        raise RateLimitedError("OpenProject is rate-limiting this client.")
     if 500 <= status_code < 600:
         LOGGER.warning("OpenProject server error: status=%s", status_code)
         raise OpenProjectServerError("OpenProject returned a server error.")

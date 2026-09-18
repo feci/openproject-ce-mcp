@@ -67,7 +67,7 @@ from ...models import (
     AttachmentSummary,
     AttachmentWriteResult,
 )
-from ..errors import InvalidInputError, OpenProjectServerError, PermissionDeniedError
+from ..errors import CapabilityDisabledError, InvalidInputError, OpenProjectServerError
 from ..pagination import clamp_limit, scan_records_and_paginate
 from ..policies import access, hidden_fields
 from ..policies import scope as scope_policy
@@ -658,7 +658,7 @@ class AttachmentService:
         """
         configured = self._settings.attachment_root
         if not configured:
-            raise PermissionDeniedError(
+            raise CapabilityDisabledError(
                 "Attachment uploads are disabled: OPENPROJECT_ATTACHMENT_ROOT is not set. "
                 "There is no current-working-directory fallback — set it to an absolute, "
                 "existing directory to allow local file uploads."

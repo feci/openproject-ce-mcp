@@ -12,6 +12,7 @@ from openproject_ce_mcp.app.errors import (
     OpenProjectError,
     OpenProjectServerError,
     PermissionDeniedError,
+    ProjectScopeDeniedError,
 )
 from openproject_ce_mcp.app.ports.activity_api import ActivityRecord
 from openproject_ce_mcp.app.ports.status_priority_type_api import StatusRecord
@@ -536,7 +537,7 @@ async def test_list_denies_when_project_cache_empty_under_restricted_scope() -> 
         project_id_to_identifier={},
     )
 
-    with pytest.raises(PermissionDeniedError, match="OPENPROJECT_READ_PROJECTS"):
+    with pytest.raises(ProjectScopeDeniedError, match="OPENPROJECT_READ_PROJECTS"):
         await service.list(limit=2)
 
     assert api.list_calls == []

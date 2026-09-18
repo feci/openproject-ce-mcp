@@ -5,7 +5,7 @@ import dataclasses
 import pytest
 from _client_test_helpers import make_settings
 
-from openproject_ce_mcp.app.errors import PermissionDeniedError
+from openproject_ce_mcp.app.errors import PermissionDeniedError, ProjectScopeDeniedError
 from openproject_ce_mcp.app.policies import scope
 
 
@@ -48,7 +48,7 @@ def test_project_candidates_from_payload_uses_identifier_and_name() -> None:
 
 def test_ensure_project_link_allowed_raises_when_no_candidate_matches() -> None:
     settings = dataclasses.replace(make_settings(), read_projects=("other",))
-    with pytest.raises(PermissionDeniedError, match="OPENPROJECT_READ_PROJECTS"):
+    with pytest.raises(ProjectScopeDeniedError, match="OPENPROJECT_READ_PROJECTS"):
         scope.ensure_project_link_allowed(
             {"href": "/api/v3/projects/7", "title": "Demo"}, settings=settings, project_id_to_identifier={}
         )
@@ -64,7 +64,7 @@ def test_ensure_project_link_allowed_noop_under_wildcard_scope() -> None:
 def test_ensure_project_write_link_allowed_checks_read_before_write() -> None:
     # read_projects excludes it -> must fail on the read check, not the write one
     settings = dataclasses.replace(make_settings(), read_projects=("other",), write_projects=("*",))
-    with pytest.raises(PermissionDeniedError, match="OPENPROJECT_READ_PROJECTS"):
+    with pytest.raises(ProjectScopeDeniedError, match="OPENPROJECT_READ_PROJECTS"):
         scope.ensure_project_write_link_allowed(
             {"href": "/api/v3/projects/7", "title": "Demo"}, settings=settings, project_id_to_identifier={}
         )
@@ -72,7 +72,7 @@ def test_ensure_project_write_link_allowed_checks_read_before_write() -> None:
 
 def test_ensure_project_write_link_allowed_raises_for_write_restricted_scope() -> None:
     settings = dataclasses.replace(make_settings(), read_projects=("*",), write_projects=("other",))
-    with pytest.raises(PermissionDeniedError, match="OPENPROJECT_WRITE_PROJECTS"):
+    with pytest.raises(ProjectScopeDeniedError, match="OPENPROJECT_WRITE_PROJECTS"):
         scope.ensure_project_write_link_allowed(
             {"href": "/api/v3/projects/7", "title": "Demo"}, settings=settings, project_id_to_identifier={}
         )
@@ -137,13 +137,13 @@ def test_classify_project_link_malformed_non_string_href() -> None:
 
 def test_ensure_project_link_allowed_denies_missing_link_even_under_wildcard_scope() -> None:
     settings = dataclasses.replace(make_settings(), read_projects=("*",))
-    with pytest.raises(PermissionDeniedError, match="OPENPROJECT_READ_PROJECTS"):
+    with pytest.raises(ProjectScopeDeniedError, match="OPENPROJECT_READ_PROJECTS"):
         scope.ensure_project_link_allowed(None, settings=settings, project_id_to_identifier={})
 
 
 def test_ensure_project_link_allowed_denies_malformed_link_even_under_wildcard_scope() -> None:
     settings = dataclasses.replace(make_settings(), read_projects=("*",))
-    with pytest.raises(PermissionDeniedError, match="OPENPROJECT_READ_PROJECTS"):
+    with pytest.raises(ProjectScopeDeniedError, match="OPENPROJECT_READ_PROJECTS"):
         scope.ensure_project_link_allowed({"title": "Demo"}, settings=settings, project_id_to_identifier={})
 
 
@@ -151,7 +151,7 @@ def test_ensure_project_link_allowed_denies_explicitly_unscoped_link_under_wildc
     """A required-project-link resource never legitimately sees {"href":
     None} -- treat it as anomalous (deny), not as an accepted optional state."""
     settings = dataclasses.replace(make_settings(), read_projects=("*",))
-    with pytest.raises(PermissionDeniedError, match="OPENPROJECT_READ_PROJECTS"):
+    with pytest.raises(ProjectScopeDeniedError, match="OPENPROJECT_READ_PROJECTS"):
         scope.ensure_project_link_allowed({"href": None}, settings=settings, project_id_to_identifier={})
 
 
@@ -167,7 +167,7 @@ def test_ensure_project_link_allowed_denies_undisclosed_under_restrictive_scope(
     the meaningless placeholder title/URN."""
     link = {"href": scope.URN_UNDISCLOSED, "title": "Undisclosed project"}
     settings = dataclasses.replace(make_settings(), read_projects=("demo",))
-    with pytest.raises(PermissionDeniedError, match="OPENPROJECT_READ_PROJECTS"):
+    with pytest.raises(ProjectScopeDeniedError, match="OPENPROJECT_READ_PROJECTS"):
         scope.ensure_project_link_allowed(link, settings=settings, project_id_to_identifier={})
 
 
@@ -184,7 +184,7 @@ def test_ensure_project_link_allowed_if_present_allows_missing_link_under_wildca
 
 def test_ensure_project_link_allowed_if_present_denies_missing_link_under_restrictive_scope() -> None:
     settings = dataclasses.replace(make_settings(), read_projects=("demo",))
-    with pytest.raises(PermissionDeniedError, match="OPENPROJECT_READ_PROJECTS"):
+    with pytest.raises(ProjectScopeDeniedError, match="OPENPROJECT_READ_PROJECTS"):
         scope.ensure_project_link_allowed_if_present(None, settings=settings, project_id_to_identifier={})
 
 
@@ -192,13 +192,13 @@ def test_ensure_project_link_allowed_if_present_denies_malformed_link_even_under
     """Unlike missing/explicitly-empty, MALFORMED is newly always denied here
     too -- a structurally broken link is never the same as "deliberately none"."""
     settings = dataclasses.replace(make_settings(), read_projects=("*",))
-    with pytest.raises(PermissionDeniedError, match="OPENPROJECT_READ_PROJECTS"):
+    with pytest.raises(ProjectScopeDeniedError, match="OPENPROJECT_READ_PROJECTS"):
         scope.ensure_project_link_allowed_if_present({"title": "Demo"}, settings=settings, project_id_to_identifier={})
 
 
 def test_ensure_project_write_link_allowed_if_present_denies_malformed_link_even_under_wildcard_scope() -> None:
     settings = dataclasses.replace(make_settings(), read_projects=("*",), write_projects=("*",))
-    with pytest.raises(PermissionDeniedError):
+    with pytest.raises(ProjectScopeDeniedError):
         scope.ensure_project_write_link_allowed_if_present(
             {"title": "Demo"}, settings=settings, project_id_to_identifier={}
         )

@@ -42,7 +42,7 @@ class StrictMCPServer(MCPServer):
             unknown = sorted(set(arguments.keys()) - allowed)
             if unknown:
                 raise ValueError(
-                    f"[validation_error] Unknown argument(s) for tool "
+                    f"[VALIDATION_FAILED] Unknown argument(s) for tool "
                     f"'{name}': {', '.join(unknown)}. "
                     f"Allowed arguments: {', '.join(sorted(allowed))}"
                 )
@@ -125,7 +125,7 @@ async def verify_strict_dispatch(mcp: StrictMCPServer) -> None:
         result = await entry.handler(None, params)  # type: ignore[arg-type]
         is_error = getattr(result, "is_error", False)
         text = "".join(getattr(block, "text", "") for block in getattr(result, "content", []))
-        if not is_error or "[validation_error]" not in text:
+        if not is_error or "[VALIDATION_FAILED]" not in text:
             raise RuntimeError(
                 "StrictMCPServer self-test failed: an unknown tool argument was not "
                 "rejected by the live dispatch path. The installed mcp SDK version "

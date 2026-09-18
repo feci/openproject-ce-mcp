@@ -1201,7 +1201,7 @@ async def test_bulk_update_work_packages_tool_invalid_parent_alias_reports_own_f
 async def test_bulk_update_work_packages_tool_rejects_non_string_scalar_cleanly(field) -> None:
     # Regression guard: a bare JSON number/bool for a field that expects a string
     # (e.g. an LLM caller sending assignee=42 instead of assignee="42") must raise
-    # a clean [validation_error] ValueError, not an unhandled AttributeError from
+    # a clean [VALIDATION_FAILED] ValueError, not an unhandled AttributeError from
     # .split()/.strip() deep inside a validator.
     class StubClient:
         @property

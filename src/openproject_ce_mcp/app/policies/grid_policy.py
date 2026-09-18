@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...config import Settings
-from ..errors import PermissionDeniedError
+from ..errors import ProjectScopeDeniedError
 from .scope import (
     ensure_project_link_allowed,
     ensure_project_write_link_allowed,
@@ -66,7 +66,7 @@ def ensure_grid_write_allowed(
     if scope_allows_all(settings.read_projects) and scope_allows_all(settings.write_projects):
         return
     if not scope_href:
-        raise PermissionDeniedError("OpenProject writes to this grid are disabled by OPENPROJECT_WRITE_PROJECTS.")
+        raise ProjectScopeDeniedError("OpenProject writes to this grid are disabled by OPENPROJECT_WRITE_PROJECTS.")
     ensure_project_write_link_allowed(
         {"href": scope_href}, settings=settings, project_id_to_identifier=project_id_to_identifier
     )

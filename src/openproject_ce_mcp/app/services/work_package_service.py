@@ -117,6 +117,7 @@ from ..errors import (
     OpenProjectError,
     OpenProjectServerError,
     PermissionDeniedError,
+    ProjectScopeDeniedError,
 )
 from ..pagination import effective_limit, paginate_server
 from ..policies import access, hidden_fields
@@ -1138,7 +1139,7 @@ class WorkPackageService:
         elif not total_is_scope_safe:
             allowed_ids = [str(pid) for pid in self._project_id_to_identifier]
             if not allowed_ids:
-                raise PermissionDeniedError(
+                raise ProjectScopeDeniedError(
                     "OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS."
                 )
             filters.append({"project_id": {"operator": "=", "values": allowed_ids}})

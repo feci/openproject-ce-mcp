@@ -1006,7 +1006,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
     },
     "create_work_package_wiki_link": {
-        "description_hash": "a1bb81f8432c1994c8776a762cd7329631a291a4b2c3b1a39e596490a719e3b0",
+        "description_hash": "7c6ffb99702215614bb6c0ae8a22038765ce41b0a32191f06506ad79b702b5ac",
         "input_schema": {
             "properties": {
                 "work_package_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "title": "Work Package Id"},
@@ -1439,7 +1439,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
     },
     "delete_work_package_wiki_link": {
-        "description_hash": "bbe7c9a02a39744cfd7ed8b97cfbdeb0cb11f2fc75eecfecd1282a3c2979a7f2",
+        "description_hash": "3d1a4e1c09e1796938e9c72568303b41097f58570845fa9d468e6d00f9f6aa20",
         "input_schema": {
             "properties": {
                 "work_package_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "title": "Work Package Id"},
@@ -4652,7 +4652,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_READ",),
     },
     "list_user_non_working_times": {
-        "description_hash": "391ca475c28c08f8a30eb345c58eff401d5adff71d64da24e633b59834fbc675",
+        "description_hash": "3f129c450eb3efaba268d22759f0293720ab332396ce6ef47fc3969fe2dd4ab4",
         "input_schema": {
             "properties": {
                 "user_ref": {"title": "User Ref", "type": "string"},
@@ -4938,7 +4938,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_READ",),
     },
     "list_work_package_wiki_links": {
-        "description_hash": "7b7315ce7916c3653ff3dfbef895de730dd4dd32e797817753a625847fb08fef",
+        "description_hash": "ca46760c1eee68b9653a0ab3838f609d46281cc9fbea9e54770d5c0028e2a5cf",
         "input_schema": {
             "properties": {
                 "work_package_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "title": "Work Package Id"},

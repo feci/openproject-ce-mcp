@@ -344,7 +344,7 @@ async def test_get_attachment_content_rejects_non_positive_max_bytes_before_call
     async def get_content(attachment_id: int, *, max_bytes: int | None = None):
         raise AssertionError("must not be reached")
 
-    with pytest.raises(ValueError, match=r"\[validation_error\].*max_bytes"):
+    with pytest.raises(ValueError, match=r"\[VALIDATION_FAILED\].*max_bytes"):
         await _registered_tool("get_attachment_content")(
             _fake_ctx(get_content=get_content), attachment_id=5, max_bytes=0
         )

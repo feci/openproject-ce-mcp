@@ -60,6 +60,24 @@ development baseline.
   now reports the actual file name/size uploaded rather than a stale
   pre-commit stat if the file changed size between the preview check and the
   confirmed write.
+- **Breaking:** tool error messages now carry a small, stable set of
+  uppercase agent-facing codes (`AUTHENTICATION_FAILED`, `PROJECT_SCOPE_DENIED`,
+  `CAPABILITY_DISABLED`, `OPENPROJECT_PERMISSION_DENIED`, `RESOURCE_NOT_FOUND`,
+  `VALIDATION_FAILED`, `CONFLICT`, `RATE_LIMITED`, `OPENPROJECT_UNAVAILABLE`,
+  `NETWORK_ERROR`, `INTERNAL_ERROR`) instead of the previous lowercase
+  categories (`validation_error`, `auth_error`, `permission_denied`,
+  `not_found`, `transport_error`, `server_error`, `openproject_error`). A
+  caller matching on the old `[category]` prefixes must update to the new
+  codes. Three distinctions that were previously conflated are now separate:
+  a project outside `OPENPROJECT_READ_PROJECTS`/`OPENPROJECT_WRITE_PROJECTS`
+  (`PROJECT_SCOPE_DENIED`) is no longer the same code as an `OPENPROJECT_ENABLE_*`
+  capability flag being off (`CAPABILITY_DISABLED`) or OpenProject's own 403
+  (`OPENPROJECT_PERMISSION_DENIED`); OpenProject's `409 Conflict` (e.g. an
+  optimistic-locking version mismatch) no longer reports as `VALIDATION_FAILED`;
+  and `429 Too Many Requests` no longer reports as `OPENPROJECT_UNAVAILABLE`.
+  Any unexpected internal error is now sanitized to a generic
+  `[INTERNAL_ERROR] An internal error occurred.` rather than leaking the raw
+  exception message.
 
 ### Removed
 

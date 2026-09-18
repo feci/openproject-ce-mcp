@@ -5,7 +5,7 @@ import dataclasses
 import pytest
 from _client_test_helpers import make_settings
 
-from openproject_ce_mcp.app.errors import InvalidInputError, PermissionDeniedError
+from openproject_ce_mcp.app.errors import InvalidInputError, PermissionDeniedError, ProjectScopeDeniedError
 from openproject_ce_mcp.app.ports.board_api import BoardFormResult, BoardRecord
 from openproject_ce_mcp.app.services.board_service import BoardService
 from openproject_ce_mcp.models import BoardDetail, BoardSummary
@@ -356,6 +356,21 @@ async def test_create_returns_preview_without_committing_when_not_confirmed() ->
 
     assert result.state == "preview"
     assert result.result is None
+    assert api.commit_create_calls == []
+
+
+@pytest.mark.asyncio
+async def test_create_without_project_denies_under_restrictive_scope() -> None:
+    """OPM-2708: this is a scope-shaped denial (ProjectScopeDeniedError), not
+    a capability-flag denial -- distinguishing it required reading the
+    message text, since both used to raise the identical PermissionDeniedError."""
+    settings = dataclasses.replace(make_settings(), read_projects=("demo",), write_projects=("demo",))
+    api = _FakeBoardApi()
+    service = _service(api, settings=settings)
+
+    with pytest.raises(ProjectScopeDeniedError, match="Project-scoped board writes require a project"):
+        await service.create(name="My Board", confirm=False)
+
     assert api.commit_create_calls == []
 
 

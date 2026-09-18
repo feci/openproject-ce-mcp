@@ -630,9 +630,14 @@ def test_validate_optional_work_package_ref_passes_through_none() -> None:
 async def test_run_tool_prefixes_client_error_categories() -> None:
     from openproject_ce_mcp.client import (
         AuthenticationError,
+        CapabilityDisabledError,
+        ConflictError,
         InvalidInputError,
         NotFoundError,
-        PermissionDeniedError,
+        OpenProjectPermissionDeniedError,
+        OpenProjectServerError,
+        ProjectScopeDeniedError,
+        RateLimitedError,
         TransportError,
     )
     from openproject_ce_mcp.tools_runtime import _run_tool
@@ -640,16 +645,21 @@ async def test_run_tool_prefixes_client_error_categories() -> None:
     async def raiser(exc):
         raise exc
 
-    # Validation failures stay ValueError with a [validation_error] prefix.
-    with pytest.raises(ValueError, match=r"^\[validation_error\] bad"):
+    # Validation failures stay ValueError with a [VALIDATION_FAILED] prefix.
+    with pytest.raises(ValueError, match=r"^\[VALIDATION_FAILED\] bad"):
         await _run_tool(raiser(InvalidInputError("bad")))
 
     # Every other category is a RuntimeError with its own prefix.
     cases = {
-        AuthenticationError("x"): "auth_error",
-        PermissionDeniedError("x"): "permission_denied",
-        NotFoundError("x"): "not_found",
-        TransportError("x"): "transport_error",
+        AuthenticationError("x"): "AUTHENTICATION_FAILED",
+        ProjectScopeDeniedError("x"): "PROJECT_SCOPE_DENIED",
+        CapabilityDisabledError("x"): "CAPABILITY_DISABLED",
+        OpenProjectPermissionDeniedError("x"): "OPENPROJECT_PERMISSION_DENIED",
+        NotFoundError("x"): "RESOURCE_NOT_FOUND",
+        ConflictError("x"): "CONFLICT",
+        RateLimitedError("x"): "RATE_LIMITED",
+        TransportError("x"): "NETWORK_ERROR",
+        OpenProjectServerError("x"): "OPENPROJECT_UNAVAILABLE",
     }
     for exc, category in cases.items():
         with pytest.raises(RuntimeError, match=rf"^\[{category}\] "):
@@ -664,16 +674,68 @@ async def test_categorize_tool_errors_tags_validation_and_avoids_double_prefix()
     async def raw_validation(_ctx):
         raise ValueError("subject is required")
 
-    with pytest.raises(ValueError, match=r"^\[validation_error\] subject is required$"):
+    with pytest.raises(ValueError, match=r"^\[VALIDATION_FAILED\] subject is required$"):
         await raw_validation(None)
 
     # An already-categorized message must not be prefixed twice.
     @_categorize_tool_errors
     async def already_tagged(_ctx):
-        raise ValueError("[not_found] gone")
+        raise ValueError("[RESOURCE_NOT_FOUND] gone")
 
-    with pytest.raises(ValueError, match=r"^\[not_found\] gone$"):
+    with pytest.raises(ValueError, match=r"^\[RESOURCE_NOT_FOUND\] gone$"):
         await already_tagged(None)
+
+
+@pytest.mark.asyncio
+async def test_categorize_tool_errors_sanitizes_unexpected_exceptions() -> None:
+    """An unexpected bug (bare KeyError/AttributeError/etc, not a typed
+    OpenProjectError) must never leak its own message to the client -- only
+    a generic [INTERNAL_ERROR] text, with the real exception logged locally
+    (via `from exc`, verified separately) but never serialized outward."""
+    from openproject_ce_mcp.tools_runtime import _categorize_tool_errors
+
+    @_categorize_tool_errors
+    async def buggy(_ctx):
+        raise KeyError("secret_internal_value_12345")
+
+    with pytest.raises(RuntimeError, match=r"^\[INTERNAL_ERROR\] An internal error occurred\.$") as exc_info:
+        await buggy(None)
+    assert "secret_internal_value_12345" not in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, KeyError)
+
+
+@pytest.mark.asyncio
+async def test_categorize_tool_errors_does_not_swallow_cancelled_error() -> None:
+    """asyncio.CancelledError (a BaseException, not an Exception) must
+    propagate through the sanitization catch-all untouched -- `except
+    Exception`, never bare `except:`."""
+    import asyncio
+
+    from openproject_ce_mcp.tools_runtime import _categorize_tool_errors
+
+    @_categorize_tool_errors
+    async def cancelled(_ctx):
+        raise asyncio.CancelledError()
+
+    with pytest.raises(asyncio.CancelledError):
+        await cancelled(None)
+
+
+@pytest.mark.asyncio
+async def test_categorize_tool_errors_reclassifies_uncoded_openproject_error() -> None:
+    """An OpenProjectError reaching _categorize_tool_errors directly (a tool
+    body calling a raising API without going through _run_tool) must still
+    get its own real code, not fall through to the generic INTERNAL_ERROR
+    sanitization path."""
+    from openproject_ce_mcp.client import NotFoundError
+    from openproject_ce_mcp.tools_runtime import _categorize_tool_errors
+
+    @_categorize_tool_errors
+    async def raw_not_found(_ctx):
+        raise NotFoundError("gone")
+
+    with pytest.raises(RuntimeError, match=r"^\[RESOURCE_NOT_FOUND\] gone$"):
+        await raw_not_found(None)
 
 
 def test_validate_sort_by_accepts_real_sortable_columns() -> None:

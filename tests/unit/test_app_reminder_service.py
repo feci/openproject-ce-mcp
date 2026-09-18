@@ -5,7 +5,7 @@ import dataclasses
 import pytest
 from _client_test_helpers import make_settings
 
-from openproject_ce_mcp.app.errors import InvalidInputError, PermissionDeniedError
+from openproject_ce_mcp.app.errors import InvalidInputError, PermissionDeniedError, ProjectScopeDeniedError
 from openproject_ce_mcp.app.ports.reminder_api import ReminderRecord
 from openproject_ce_mcp.app.services.reminder_service import ReminderService
 from openproject_ce_mcp.models import ReminderSummary
@@ -411,7 +411,7 @@ async def test_update_denies_malformed_remindable_link_even_under_open_scope() -
     settings = dataclasses.replace(make_settings(), read_projects=("*",), write_projects=("*",))
     service = _service(api=api, settings=settings)
 
-    with pytest.raises(PermissionDeniedError, match="OPENPROJECT_WRITE_PROJECTS"):
+    with pytest.raises(ProjectScopeDeniedError, match="OPENPROJECT_WRITE_PROJECTS"):
         await service.update(reminder_id=7, note="updated", confirm=True)
 
     assert api.update_calls == []
@@ -426,7 +426,7 @@ async def test_delete_denies_malformed_remindable_link_even_under_open_scope() -
     settings = dataclasses.replace(make_settings(), read_projects=("*",), write_projects=("*",))
     service = _service(api=api, settings=settings)
 
-    with pytest.raises(PermissionDeniedError, match="OPENPROJECT_WRITE_PROJECTS"):
+    with pytest.raises(ProjectScopeDeniedError, match="OPENPROJECT_WRITE_PROJECTS"):
         await service.delete(reminder_id=7, confirm=True)
 
     assert api.delete_calls == []
@@ -439,7 +439,7 @@ async def test_update_denies_write_outside_write_allowlist() -> None:
     settings = dataclasses.replace(make_settings(), write_projects=("demo",))
     service = _service(api=api, work_package_lookup_api=work_package_lookup_api, settings=settings)
 
-    with pytest.raises(PermissionDeniedError):
+    with pytest.raises(ProjectScopeDeniedError):
         await service.update(reminder_id=7, note="updated", confirm=True)
 
     assert api.update_calls == []
@@ -452,7 +452,7 @@ async def test_update_denies_write_even_without_confirm() -> None:
     settings = dataclasses.replace(make_settings(), write_projects=("demo",))
     service = _service(api=api, work_package_lookup_api=work_package_lookup_api, settings=settings)
 
-    with pytest.raises(PermissionDeniedError):
+    with pytest.raises(ProjectScopeDeniedError):
         await service.update(reminder_id=7, note="updated", confirm=False)
 
     assert api.update_calls == []
@@ -491,7 +491,7 @@ async def test_delete_denies_write_outside_write_allowlist() -> None:
     settings = dataclasses.replace(make_settings(), write_projects=("demo",))
     service = _service(api=api, work_package_lookup_api=work_package_lookup_api, settings=settings)
 
-    with pytest.raises(PermissionDeniedError):
+    with pytest.raises(ProjectScopeDeniedError):
         await service.delete(reminder_id=7, confirm=True)
 
     assert api.delete_calls == []
@@ -504,7 +504,7 @@ async def test_delete_denies_write_even_without_confirm() -> None:
     settings = dataclasses.replace(make_settings(), write_projects=("demo",))
     service = _service(api=api, work_package_lookup_api=work_package_lookup_api, settings=settings)
 
-    with pytest.raises(PermissionDeniedError):
+    with pytest.raises(ProjectScopeDeniedError):
         await service.delete(reminder_id=7, confirm=False)
 
     assert api.delete_calls == []

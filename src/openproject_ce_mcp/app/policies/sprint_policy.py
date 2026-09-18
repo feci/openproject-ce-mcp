@@ -25,7 +25,7 @@ from __future__ import annotations
 from typing import Any
 
 from ...config import Settings
-from ..errors import PermissionDeniedError
+from ..errors import ProjectScopeDeniedError
 from . import scope
 
 
@@ -43,7 +43,9 @@ def ensure_sprint_workspace_allowed(
             project_id_to_identifier=project_id_to_identifier, payload=defining_workspace_payload
         )
         if not scope.scope_matches_candidates(settings.read_projects, candidates):
-            raise PermissionDeniedError("OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS.")
+            raise ProjectScopeDeniedError(
+                "OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS."
+            )
         return
     scope.ensure_project_link_allowed(
         defining_workspace_link, settings=settings, project_id_to_identifier=project_id_to_identifier

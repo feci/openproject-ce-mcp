@@ -77,7 +77,7 @@ def strict_mcp() -> StrictMCPServer:
 async def test_unknown_top_level_argument_is_rejected(strict_mcp: StrictMCPServer) -> None:
     result = await _dispatch(strict_mcp, "plain_tool", {"name": "World", "filters": ["x"]})
     assert result.is_error is True
-    assert "[validation_error]" in _text(result)
+    assert "[VALIDATION_FAILED]" in _text(result)
     assert "filters" in _text(result)
     assert strict_mcp._test_calls == []  # type: ignore[attr-defined]
 
@@ -110,7 +110,7 @@ async def test_unknown_tool_name_keeps_standard_error(strict_mcp: StrictMCPServe
     pre-existing SDK error path that must stay unchanged."""
     result = await _dispatch(strict_mcp, "does_not_exist", {"anything": 1})
     assert result.is_error is True
-    assert "validation_error" not in _text(result)
+    assert "VALIDATION_FAILED" not in _text(result)
     assert "Unknown tool" in _text(result)
 
 
@@ -148,7 +148,7 @@ async def test_unknown_argument_rejected_over_a_real_client_server_roundtrip(str
                 await session.initialize()
                 result = await session.call_tool("plain_tool", {"name": "World", "filters": ["x"]})
                 assert result.is_error is True
-                assert "[validation_error]" in _text(result)
+                assert "[VALIDATION_FAILED]" in _text(result)
 
                 valid_result = await session.call_tool("plain_tool", {"name": "World"})
                 assert valid_result.is_error is not True
@@ -178,7 +178,7 @@ async def test_list_work_packages_rejects_unknown_filters_argument() -> None:
         },
     )
     assert result.is_error is True
-    assert "[validation_error]" in _text(result)
+    assert "[VALIDATION_FAILED]" in _text(result)
     assert "filters" in _text(result)
 
 
@@ -186,7 +186,7 @@ async def test_list_versions_rejects_unknown_page_argument() -> None:
     mcp = create_app(make_settings())
     result = await _dispatch(mcp, "list_versions", {"project": "ENC", "page": 3})
     assert result.is_error is True
-    assert "[validation_error]" in _text(result)
+    assert "[VALIDATION_FAILED]" in _text(result)
     assert "page" in _text(result)
 
 
@@ -197,7 +197,7 @@ async def test_search_work_packages_rejects_legacy_query_argument() -> None:
     mcp = create_app(make_settings())
     result = await _dispatch(mcp, "search_work_packages", {"query": "0.1.0"})
     assert result.is_error is True
-    assert "[validation_error]" in _text(result)
+    assert "[VALIDATION_FAILED]" in _text(result)
     assert "query" in _text(result)
 
 
@@ -222,7 +222,7 @@ async def test_verify_strict_dispatch_raises_if_dispatch_not_enforced() -> None:
             # call_tool (including a TypeError from a bad signature) and
             # returns it as an is_error=True CallToolResult, which correctly
             # trips verify_strict_dispatch's "not is_error or no
-            # [validation_error] marker" check for a different reason than
+            # [VALIDATION_FAILED] marker" check for a different reason than
             # this test intends. Keep the signature exact so a real dispatch-
             # bypass regression (not a signature typo) is what's asserted.
             return await super(StrictMCPServer, self).call_tool(name, arguments, context)

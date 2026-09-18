@@ -37,7 +37,7 @@ from typing import Any
 
 from ...config import Settings
 from ...models import ReminderListResult, ReminderSummary, ReminderWriteResult
-from ..errors import InvalidInputError, PermissionDeniedError
+from ..errors import InvalidInputError, ProjectScopeDeniedError
 from ..pagination import clamp_limit, fetch_bounded_and_paginate
 from ..policies import access, hidden_fields
 from ..policies import scope as scope_policy
@@ -189,7 +189,7 @@ class ReminderService:
         remindable = await self._api.get_remindable_link(reminder_id)
         href = remindable.get("href") if isinstance(remindable, dict) else None
         if not isinstance(href, str) or not href:
-            raise PermissionDeniedError(
+            raise ProjectScopeDeniedError(
                 "OpenProject writes to this reminder are disabled by OPENPROJECT_WRITE_PROJECTS."
             )
         work_package = await self._work_package_lookup_api.get_by_href(href)

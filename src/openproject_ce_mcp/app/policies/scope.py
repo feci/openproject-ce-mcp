@@ -43,7 +43,7 @@ from typing import Any
 from urllib.parse import unquote
 
 from ...config import Settings
-from ..errors import PermissionDeniedError
+from ..errors import PermissionDeniedError, ProjectScopeDeniedError
 
 SUBJECT_LIMIT = 255
 
@@ -230,16 +230,16 @@ def ensure_project_link_allowed(link: Any, *, settings: Settings, project_id_to_
     """
     state = classify_project_link(link)
     if state in (LinkState.MISSING, LinkState.MALFORMED, LinkState.EXPLICITLY_UNSCOPED):
-        raise PermissionDeniedError("OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS.")
+        raise ProjectScopeDeniedError("OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS.")
     if state is LinkState.UNDISCLOSED:
         if scope_allows_all(settings.read_projects):
             return
-        raise PermissionDeniedError("OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS.")
+        raise ProjectScopeDeniedError("OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS.")
     if scope_allows_all(settings.read_projects):
         return
     candidates = project_candidates(project_id_to_identifier=project_id_to_identifier, link=link)
     if not scope_matches_candidates(settings.read_projects, candidates):
-        raise PermissionDeniedError("OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS.")
+        raise ProjectScopeDeniedError("OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS.")
 
 
 def ensure_project_write_link_allowed(
@@ -250,12 +250,12 @@ def ensure_project_write_link_allowed(
     if state is LinkState.UNDISCLOSED:
         if scope_allows_all(settings.write_projects):
             return
-        raise PermissionDeniedError("OpenProject writes to this project are disabled by OPENPROJECT_WRITE_PROJECTS.")
+        raise ProjectScopeDeniedError("OpenProject writes to this project are disabled by OPENPROJECT_WRITE_PROJECTS.")
     if scope_allows_all(settings.write_projects):
         return
     candidates = project_candidates(project_id_to_identifier=project_id_to_identifier, link=link)
     if not scope_matches_candidates(settings.write_projects, candidates):
-        raise PermissionDeniedError("OpenProject writes to this project are disabled by OPENPROJECT_WRITE_PROJECTS.")
+        raise ProjectScopeDeniedError("OpenProject writes to this project are disabled by OPENPROJECT_WRITE_PROJECTS.")
 
 
 def ensure_project_link_allowed_if_present(
@@ -272,16 +272,16 @@ def ensure_project_link_allowed_if_present(
     """
     state = classify_project_link(link)
     if state is LinkState.MALFORMED:
-        raise PermissionDeniedError("OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS.")
+        raise ProjectScopeDeniedError("OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS.")
     if state is LinkState.UNDISCLOSED:
         if scope_allows_all(settings.read_projects):
             return
-        raise PermissionDeniedError("OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS.")
+        raise ProjectScopeDeniedError("OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS.")
     if scope_allows_all(settings.read_projects):
         return
     candidates = project_candidates(project_id_to_identifier=project_id_to_identifier, link=link)
     if not scope_matches_candidates(settings.read_projects, candidates):
-        raise PermissionDeniedError("OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS.")
+        raise ProjectScopeDeniedError("OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS.")
 
 
 def ensure_project_write_link_allowed_if_present(
@@ -292,9 +292,9 @@ def ensure_project_write_link_allowed_if_present(
     if state is LinkState.UNDISCLOSED:
         if scope_allows_all(settings.write_projects):
             return
-        raise PermissionDeniedError("OpenProject writes to this project are disabled by OPENPROJECT_WRITE_PROJECTS.")
+        raise ProjectScopeDeniedError("OpenProject writes to this project are disabled by OPENPROJECT_WRITE_PROJECTS.")
     if scope_allows_all(settings.write_projects):
         return
     candidates = project_candidates(project_id_to_identifier=project_id_to_identifier, link=link)
     if not scope_matches_candidates(settings.write_projects, candidates):
-        raise PermissionDeniedError("OpenProject writes to this project are disabled by OPENPROJECT_WRITE_PROJECTS.")
+        raise ProjectScopeDeniedError("OpenProject writes to this project are disabled by OPENPROJECT_WRITE_PROJECTS.")

@@ -53,7 +53,7 @@ from urllib.parse import urlparse
 from ...config import Settings
 from ...models import BoardDetail, BoardListResult, BoardWriteResult
 from ..api_href import api_href as _api_href
-from ..errors import InvalidInputError, PermissionDeniedError
+from ..errors import InvalidInputError, ProjectScopeDeniedError
 from ..origin import origin_from_url as _origin_from_url
 from ..pagination import clamp_limit, paginate_server, scan_records_and_paginate
 from ..policies import access, board_policy, hidden_fields
@@ -223,7 +223,7 @@ class BoardService:
             scope_policy.scope_allows_all(self._settings.read_projects)
             and scope_policy.scope_allows_all(self._settings.write_projects)
         ):
-            raise PermissionDeniedError(
+            raise ProjectScopeDeniedError(
                 "Project-scoped board writes require a project unless both OPENPROJECT_READ_PROJECTS and "
                 "OPENPROJECT_WRITE_PROJECTS are '*'."
             )

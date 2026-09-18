@@ -186,7 +186,7 @@ for that resource.
 Per-user schedule overrides (vacation date ranges and recurring weekly
 working-hours schedules) — requires OpenProject 17.3+ (feature-flag-gated
 through 17.6, generally available from 17.7; earlier versions return a
-`[server_error]`, since the underlying route does not exist at all before
+`[OPENPROJECT_UNAVAILABLE]`, since the underlying route does not exist at all before
 17.3). Gated by its own dedicated flag pair,
 `OPENPROJECT_ENABLE_USER_SCHEDULE_READ`/`_WRITE` (both default `false`) —
 neither [Users](#users)' `OPENPROJECT_ENABLE_ADMIN_READ`/`_WRITE` nor a
@@ -287,9 +287,9 @@ has
 >
 > **Note:** the `wiki_page_links` endpoint (`list_work_package_wiki_links`/
 > `create_work_package_wiki_link`/`delete_work_package_wiki_link`) requires
-> OpenProject 17.6 or later — earlier versions return a `[server_error]`.
+> OpenProject 17.6 or later — earlier versions return a `[OPENPROJECT_UNAVAILABLE]`.
 >
-> **Note:** `list_work_package_wiki_links` returns a `[server_error]` whenever
+> **Note:** `list_work_package_wiki_links` returns a `[OPENPROJECT_UNAVAILABLE]` whenever
 > the work package actually has one or more wiki page links due to an
 > OpenProject server bug in 16.6/17.6/17.7.1. Only the
 > empty-list case reliably works. `delete_work_package_wiki_link` is affected
@@ -638,13 +638,17 @@ type instead of parsing free text. The categories are:
 
 | Category | Meaning |
 | --- | --- |
-| `[validation_error]` | An input was rejected before the request (fix the arguments and retry) |
-| `[auth_error]` | Authentication failed (check the API token) |
-| `[permission_denied]` | The token lacks permission, or a write scope is disabled |
-| `[not_found]` | The resource does not exist (or the feature needs a newer OpenProject) |
-| `[transport_error]` | OpenProject could not be reached (transient — safe to retry) |
-| `[server_error]` | OpenProject returned an unexpected failure |
-| `[openproject_error]` | Any other OpenProject-side failure |
+| `[VALIDATION_FAILED]` | An input was rejected before the request (fix the arguments and retry) |
+| `[AUTHENTICATION_FAILED]` | Authentication failed (check the API token) |
+| `[PROJECT_SCOPE_DENIED]` | The target project is outside `OPENPROJECT_READ_PROJECTS`/`OPENPROJECT_WRITE_PROJECTS` |
+| `[CAPABILITY_DISABLED]` | This category of operation is turned off for this deployment (an `OPENPROJECT_ENABLE_*` flag, or a required setting like `OPENPROJECT_ATTACHMENT_ROOT`, is not set) |
+| `[OPENPROJECT_PERMISSION_DENIED]` | OpenProject itself rejected the request with 403 (a permissions problem on the OpenProject side, not this server's configuration) |
+| `[RESOURCE_NOT_FOUND]` | The resource does not exist (or the feature needs a newer OpenProject) |
+| `[CONFLICT]` | The request conflicts with the resource's current state (e.g. an optimistic-locking version mismatch) |
+| `[RATE_LIMITED]` | OpenProject is rate-limiting this client (safe to retry after a delay) |
+| `[NETWORK_ERROR]` | OpenProject could not be reached (transient — safe to retry) |
+| `[OPENPROJECT_UNAVAILABLE]` | OpenProject returned an unexpected failure |
+| `[INTERNAL_ERROR]` | An unexpected error in this server itself (not OpenProject) — the underlying detail is logged locally, never returned to the caller |
 
 Successful write previews are not errors — they return a structured result with
 `ready`, `state` (`"rejected"` | `"invalid"` | `"preview"` | `"confirmed"`),

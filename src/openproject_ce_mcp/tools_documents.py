@@ -319,10 +319,10 @@ async def list_work_package_wiki_links(
     """List wiki pages linked to a work package.
 
     Requires OpenProject 17.6+ — the wiki_page_links endpoint does not exist
-    on earlier versions and returns a [server_error].
+    on earlier versions and returns a [OPENPROJECT_UNAVAILABLE].
 
     Known OpenProject server bug (confirmed on 16.6/17.6/17.7.1): this call
-    returns a [server_error] whenever the work package
+    returns a [OPENPROJECT_UNAVAILABLE] whenever the work package
     actually has one or more wiki page links — only the empty-list case
     reliably works. create_work_package_wiki_link/delete_work_package_wiki_link
     are unaffected and fully functional.
@@ -351,7 +351,7 @@ async def create_work_package_wiki_link(
     writes when called again with confirm=true.
 
     Requires OpenProject 17.6+ — the wiki_page_links endpoint does not exist
-    on earlier versions and returns a [server_error].
+    on earlier versions and returns a [OPENPROJECT_UNAVAILABLE].
 
     work_package_id: internal id (e.g., 952) or display_id (e.g., "PROJ-51"), not UI display number.
     identifier: the target wiki page's provider-specific identifier (not this
@@ -380,7 +380,7 @@ async def delete_work_package_wiki_link(
     called again with confirm=true.
 
     Known OpenProject server bug (confirmed on 16.6/17.6/17.7.1): this call
-    currently fails with a [server_error] whenever the
+    currently fails with a [OPENPROJECT_UNAVAILABLE] whenever the
     given link actually exists — the same bug that breaks
     list_work_package_wiki_links, since this tool verifies link_id actually
     belongs to work_package_id before deleting (a real authorization check,
