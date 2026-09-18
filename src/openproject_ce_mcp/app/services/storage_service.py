@@ -75,7 +75,8 @@ here, since delete()'s prior GET means even the identity confirmation is
 withheld from a read-disabled-but-somehow-write-enabled caller (an
 unreachable combination given Settings.from_env's write-implies-read
 validation, but the ordering still matters for a directly-constructed
-Settings in a test).
+Settings in a test). Wired via `_finalize_write`'s `gate_before_preview=True`
+(OPM-2705), same as Group and User.delete().
 
 delete()'s prior GET and preview message deliberately surface a warning
 about OpenProject's own cascade behavior: Storages::Storages::DeleteService
@@ -91,12 +92,13 @@ from __future__ import annotations
 from typing import Any
 
 from ...config import Settings
-from ...models import StorageDetail, StorageListResult, StorageWriteResult, WriteResultState
+from ...models import StorageDetail, StorageListResult, StorageWriteResult
 from ..errors import InvalidInputError
 from ..pagination import effective_limit as _effective_limit
 from ..pagination import paginate_client
 from ..policies import access, hidden_fields
 from ..ports.storage_api import StorageApi
+from ._write_outcome import _finalize_write, _WriteOutcome
 
 _PROVIDER_TYPE_URN = {
     "Nextcloud": "urn:openproject-org:api:v3:storages:Nextcloud",
@@ -161,9 +163,6 @@ class StorageService:
         drive_id: str | None = None,
         confirm: bool = False,
     ) -> StorageWriteResult:
-        # Checked unconditionally -- no prior GET to gate an unauthorized
-        # preview request on (matches GroupService.create()).
-        access.ensure_write_enabled("admin", settings=self._settings)
         urn = _PROVIDER_TYPE_URN.get(provider_type)
         if urn is None:
             raise InvalidInputError(
@@ -197,35 +196,30 @@ class StorageService:
             body["drive_id"] = drive_id
             payload_preview["drive_id"] = drive_id
 
-        if not confirm:
-            return self._write_result(
-                action="create",
-                state="preview",
-                ready=True,
-                message=(
-                    "OpenProject is ready to attempt creating the storage. There is no pre-validation "
-                    "endpoint for storages, so provider-specific rejections (an OneDrive/Sharepoint "
-                    "provider_type on a Community Edition instance without an Enterprise token; a "
-                    "Nextcloud host that fails OpenProject's live reachability/setup-completeness probe) "
-                    "only surface at confirm=true commit time, not at this preview step. Ask for "
-                    "confirmation, then call again with confirm=true to create it."
-                ),
-                storage_id=None,
-                payload=payload_preview,
-                validation_errors={},
-                result=None,
-            )
-        result = self._stamp(await self._api.commit_create(body))
-        return self._write_result(
-            action="create",
-            state="confirmed",
-            ready=True,
-            message="Storage created successfully.",
-            storage_id=result.id,
+        async def _commit(p: dict[str, Any]) -> StorageDetail:
+            return self._stamp(await self._api.commit_create(body))  # type: ignore[no-any-return]
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload_preview,
             validation_errors={},
-            result=result,
+            identity={"storage_id": None},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("admin", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"storage_id": d.id},
+            rejected_message="",
+            preview_message=(
+                "OpenProject is ready to attempt creating the storage. There is no pre-validation "
+                "endpoint for storages, so provider-specific rejections (an OneDrive/Sharepoint "
+                "provider_type on a Community Edition instance without an Enterprise token; a "
+                "Nextcloud host that fails OpenProject's live reachability/setup-completeness probe) "
+                "only surface at confirm=true commit time, not at this preview step. Ask for "
+                "confirmation, then call again with confirm=true to create it."
+            ),
+            success_message="Storage created successfully.",
+            gate_before_preview=True,
         )
+        return self._to_write_result("create", outcome)
 
     async def update(
         self,
@@ -235,7 +229,6 @@ class StorageService:
         host: str | None = None,
         confirm: bool = False,
     ) -> StorageWriteResult:
-        access.ensure_write_enabled("admin", settings=self._settings)
         body: dict[str, Any] = {}
         links: dict[str, Any] = {}
         if name is not None:
@@ -252,91 +245,83 @@ class StorageService:
         if host is not None:
             payload_preview["host"] = host
 
-        if not confirm:
-            # Fetched only on the preview branch -- the confirmed branch never
-            # references it (its own PATCH result comes from commit_update).
-            current = await self._api.get(storage_id)
-            return self._write_result(
-                action="update",
-                state="preview",
-                ready=True,
-                message=(
-                    "OpenProject is ready to attempt updating the storage. Changing `host` on a Nextcloud "
-                    "storage re-runs OpenProject's live host-reachability/setup-completeness probe at "
-                    "confirm=true (no pre-validation endpoint exists to check this earlier). Ask for "
-                    "confirmation, then call again with confirm=true."
-                ),
-                storage_id=storage_id,
-                payload=payload_preview,
-                validation_errors={},
-                result=self._stamp(current.to_detail()),
-            )
-        result = self._stamp(await self._api.commit_update(storage_id, body))
-        return self._write_result(
-            action="update",
-            state="confirmed",
-            ready=True,
-            message="Storage updated successfully.",
-            storage_id=result.id,
+        # Checked unconditionally, before the preview-branch GET below -- see
+        # this file's docstring. Must fire before that GET, so this is an
+        # explicit pre-check; `_finalize_write`'s own `gate_before_preview`
+        # re-check is then a harmless no-I/O redundant check.
+        access.ensure_write_enabled("admin", settings=self._settings)
+
+        # Fetched only on the preview branch -- the confirmed branch never
+        # references it (its own PATCH result comes from commit_update).
+        preview_current = self._stamp((await self._api.get(storage_id)).to_detail()) if not confirm else None
+
+        async def _commit(p: dict[str, Any]) -> StorageDetail:
+            return self._stamp(await self._api.commit_update(storage_id, body))  # type: ignore[no-any-return]
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload_preview,
             validation_errors={},
-            result=result,
+            identity={"storage_id": storage_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("admin", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"storage_id": d.id},
+            rejected_message="",
+            preview_message=(
+                "OpenProject is ready to attempt updating the storage. Changing `host` on a Nextcloud "
+                "storage re-runs OpenProject's live host-reachability/setup-completeness probe at "
+                "confirm=true (no pre-validation endpoint exists to check this earlier). Ask for "
+                "confirmation, then call again with confirm=true."
+            ),
+            success_message="Storage updated successfully.",
+            gate_before_preview=True,
+            preview_detail=preview_current,
         )
+        return self._to_write_result("update", outcome)
 
     async def delete(self, storage_id: int, *, confirm: bool = False) -> StorageWriteResult:
-        access.ensure_write_enabled("admin", settings=self._settings)
         payload = {"id": storage_id}
-        if not confirm:
-            # Fetched only on the preview branch -- the confirmed branch never
-            # references it (commit_delete needs only the id).
-            current = await self._api.get(storage_id)
-            return self._write_result(
-                action="delete",
-                state="preview",
-                ready=True,
-                message=(
-                    "OpenProject is ready to delete the storage. This cascades: every project's link to "
-                    "this storage (project_storages) is deleted along with it, and if the storage has "
-                    "automatically-managed project folders, OpenProject may also issue a REMOTE "
-                    "folder-deletion call against the external storage itself. Ask for confirmation, then "
-                    "call again with confirm=true to delete it."
-                ),
-                storage_id=storage_id,
-                payload=payload,
-                validation_errors={},
-                result=self._stamp(current.to_detail()),
-            )
-        await self._api.commit_delete(storage_id)
-        return self._write_result(
-            action="delete",
-            state="confirmed",
-            ready=True,
-            message="Storage deleted successfully.",
-            storage_id=storage_id,
+
+        # Checked unconditionally, before the preview-branch GET below --
+        # same reasoning as update() above.
+        access.ensure_write_enabled("admin", settings=self._settings)
+
+        # Fetched only on the preview branch, same reasoning as update() above.
+        preview_current = self._stamp((await self._api.get(storage_id)).to_detail()) if not confirm else None
+
+        async def _commit(p: dict[str, Any]) -> None:
+            await self._api.commit_delete(storage_id)
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=None,
+            identity={"storage_id": storage_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("admin", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"storage_id": storage_id},
+            rejected_message="",
+            preview_message=(
+                "OpenProject is ready to delete the storage. This cascades: every project's link to "
+                "this storage (project_storages) is deleted along with it, and if the storage has "
+                "automatically-managed project folders, OpenProject may also issue a REMOTE "
+                "folder-deletion call against the external storage itself. Ask for confirmation, then "
+                "call again with confirm=true to delete it."
+            ),
+            success_message="Storage deleted successfully.",
+            gate_before_preview=True,
+            preview_detail=preview_current,
         )
+        return self._to_write_result("delete", outcome)
 
-    def _write_result(
-        self,
-        *,
-        action: str,
-        state: WriteResultState,
-        ready: bool,
-        message: str,
-        storage_id: int | None,
-        payload: dict[str, Any],
-        validation_errors: dict[str, str],
-        result: StorageDetail | None,
-    ) -> StorageWriteResult:
+    def _to_write_result(self, action: str, outcome: _WriteOutcome[StorageDetail | None]) -> StorageWriteResult:
         return StorageWriteResult(
             action=action,
-            state=state,
-            ready=ready,
-            message=message,
-            storage_id=storage_id,
-            payload=payload,
-            validation_errors=validation_errors,
-            result=result,
+            state=outcome.state,
+            ready=outcome.ready,
+            message=outcome.message,
+            payload=outcome.payload,
+            validation_errors=outcome.validation_errors,
+            result=outcome.detail,
+            **outcome.identity,
         )

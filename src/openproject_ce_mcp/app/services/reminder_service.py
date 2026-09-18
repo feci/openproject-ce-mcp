@@ -21,12 +21,11 @@ scopes differently:
   Emoji Reactions' `toggle()` (fail-closed raise on a missing/malformed link,
   not a bool-returning check to re-wrap).
 
-No shared `_write_outcome.py` state machine: `create()`/`update()` return the
-same `ReminderWriteResult` shape, but neither goes through a `<domain>/form`
-endpoint the way Grid/News/Board do -- `_finalize_write` assumes a
-form-produced `payload`/`validation_errors` pair, which this domain's flat
-POST/PATCH payload construction doesn't have. `delete()` stays its own flat
-method (single write action, no sibling delete-shaped write to share with).
+`create()`/`update()`/`delete()` share the same `ReminderWriteResult` shape
+and are wired onto the shared `_write_outcome._finalize_write` with
+`validation_errors={}` throughout (OPM-2705) -- like News/Group/Storage, this
+domain has no `<domain>/form` endpoint the way Grid/Board do, but
+`_finalize_write` already supports the no-form case.
 
 Read/write scope reuses `"work_package"` (not a dedicated `"reminder"`
 scope).
@@ -50,6 +49,7 @@ from ..ports.work_package_ref import (
     WorkPackageProjectAllowedCheck,
 )
 from ..ports.work_package_resolution import WorkPackageAllowedContext
+from ._write_outcome import _finalize_write, _WriteOutcome
 
 
 class ReminderService:
@@ -156,33 +156,26 @@ class ReminderService:
             hidden_fields.ensure_field_writable("reminder", "note", settings=self._settings)
             payload["note"] = note
 
-        if not confirm:
-            return ReminderWriteResult(
-                action="create",
-                state="preview",
-                ready=True,
-                message="OpenProject is ready to create this reminder. Ask for confirmation, then call again with confirm=true.",
-                reminder_id=None,
-                payload=payload,
-                validation_errors={},
-                result=None,
-            )
-        access.ensure_write_enabled("work_package", settings=self._settings)
-        # One active reminder per work package/user: a second create returns
-        # 409, surfaced as InvalidInputError with the API's "update or
-        # delete" message.
-        record = await self._api.create(resolved_id, payload)
-        result = self._stamp(record.summary())
-        return ReminderWriteResult(
-            action="create",
-            state="confirmed",
-            ready=True,
-            message="Reminder created successfully.",
-            reminder_id=result.id,
+        async def _commit(p: dict[str, Any]) -> ReminderSummary:
+            # One active reminder per work package/user: a second create
+            # returns 409, surfaced as InvalidInputError with the API's
+            # "update or delete" message.
+            record = await self._api.create(resolved_id, p)
+            return self._stamp(record.summary())
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=result,
+            identity={"reminder_id": None},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("work_package", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"reminder_id": d.id},
+            rejected_message="",
+            preview_message="OpenProject is ready to create this reminder. Ask for confirmation, then call again with confirm=true.",
+            success_message="Reminder created successfully.",
         )
+        return self._to_write_result("create", outcome)
 
     async def _ensure_reminder_project_write_allowed(self, reminder_id: int) -> None:
         """Fetch only the reminder's `remindable` link (not the full record --
@@ -225,54 +218,52 @@ class ReminderService:
         if not payload:
             raise InvalidInputError("At least one field (remind_at or note) is required.")
 
-        if not confirm:
-            return ReminderWriteResult(
-                action="update",
-                state="preview",
-                ready=True,
-                message="OpenProject is ready to update this reminder. Ask for confirmation, then call again with confirm=true.",
-                reminder_id=reminder_id,
-                payload=payload,
-                validation_errors={},
-                result=None,
-            )
-        access.ensure_write_enabled("work_package", settings=self._settings)
-        record = await self._api.update(reminder_id, payload)
-        result = self._stamp(record.summary())
-        return ReminderWriteResult(
-            action="update",
-            state="confirmed",
-            ready=True,
-            message="Reminder updated successfully.",
-            reminder_id=result.id,
+        async def _commit(p: dict[str, Any]) -> ReminderSummary:
+            record = await self._api.update(reminder_id, p)
+            return self._stamp(record.summary())
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=result,
+            identity={"reminder_id": reminder_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("work_package", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"reminder_id": d.id},
+            rejected_message="",
+            preview_message="OpenProject is ready to update this reminder. Ask for confirmation, then call again with confirm=true.",
+            success_message="Reminder updated successfully.",
         )
+        return self._to_write_result("update", outcome)
 
     async def delete(self, *, reminder_id: int, confirm: bool = False) -> ReminderWriteResult:
         await self._ensure_reminder_project_write_allowed(reminder_id)
 
-        if not confirm:
-            return ReminderWriteResult(
-                action="delete",
-                state="preview",
-                ready=True,
-                message="OpenProject is ready to delete this reminder. Ask for confirmation, then call again with confirm=true.",
-                reminder_id=reminder_id,
-                payload={},
-                validation_errors={},
-                result=None,
-            )
-        access.ensure_write_enabled("work_package", settings=self._settings)
-        await self._api.delete(reminder_id)
-        return ReminderWriteResult(
-            action="delete",
-            state="confirmed",
-            ready=True,
-            message="Reminder deleted successfully.",
-            reminder_id=reminder_id,
+        async def _commit(p: dict[str, Any]) -> None:
+            await self._api.delete(reminder_id)
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload={},
             validation_errors={},
-            result=None,
+            identity={"reminder_id": reminder_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("work_package", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"reminder_id": reminder_id},
+            rejected_message="",
+            preview_message="OpenProject is ready to delete this reminder. Ask for confirmation, then call again with confirm=true.",
+            success_message="Reminder deleted successfully.",
+        )
+        return self._to_write_result("delete", outcome)
+
+    def _to_write_result(self, action: str, outcome: _WriteOutcome[ReminderSummary | None]) -> ReminderWriteResult:
+        return ReminderWriteResult(
+            action=action,
+            state=outcome.state,
+            ready=outcome.ready,
+            message=outcome.message,
+            payload=outcome.payload,
+            validation_errors=outcome.validation_errors,
+            result=outcome.detail,
+            **outcome.identity,
         )

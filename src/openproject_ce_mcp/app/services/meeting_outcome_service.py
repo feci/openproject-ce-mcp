@@ -35,6 +35,7 @@ from ..ports.meeting_agenda_item_api import MeetingAgendaItemApi
 from ..ports.meeting_api import MeetingApi
 from ..ports.meeting_outcome_api import MeetingOutcomeApi
 from ..version_gate import call_version_gated
+from ._write_outcome import _finalize_write, _WriteOutcome
 
 
 class MeetingOutcomeService:
@@ -176,36 +177,26 @@ class MeetingOutcomeService:
         payload = await self._build_write_payload(
             agenda_item_id=agenda_item_id, kind=kind, notes=notes, work_package_id=work_package_id
         )
-        if not confirm:
-            return MeetingOutcomeWriteResult(
-                action="create",
-                state="preview",
-                ready=True,
-                message=(
-                    "OpenProject is ready to create this meeting outcome. Ask for confirmation, "
-                    "then call again with confirm=true."
-                ),
-                outcome_id=None,
-                meeting_agenda_item_id=agenda_item_id,
-                payload=payload,
-                validation_errors={},
-                result=None,
-            )
+        async def _commit(p: dict[str, Any]) -> MeetingOutcomeSummary:
+            record = await call_version_gated(lambda: self._api.create(p), feature="Meeting outcomes", floor="17.6")
+            return self._stamp(record.summary)
 
-        access.ensure_write_enabled("meeting", settings=self._settings)
-        record = await call_version_gated(lambda: self._api.create(payload), feature="Meeting outcomes", floor="17.6")
-        result = self._stamp(record.summary)
-        return MeetingOutcomeWriteResult(
-            action="create",
-            state="confirmed",
-            ready=True,
-            message="Meeting outcome created successfully.",
-            outcome_id=result.id,
-            meeting_agenda_item_id=result.meeting_agenda_item_id,
+        write_outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=result,
+            identity={"outcome_id": None, "meeting_agenda_item_id": agenda_item_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("meeting", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"outcome_id": d.id, "meeting_agenda_item_id": d.meeting_agenda_item_id},
+            rejected_message="",
+            preview_message=(
+                "OpenProject is ready to create this meeting outcome. Ask for confirmation, "
+                "then call again with confirm=true."
+            ),
+            success_message="Meeting outcome created successfully.",
         )
+        return self._to_write_result("create", write_outcome)
 
     async def update(
         self,
@@ -222,66 +213,59 @@ class MeetingOutcomeService:
         payload = await self._build_write_payload(
             agenda_item_id=None, kind=kind, notes=notes, work_package_id=work_package_id
         )
-        if not confirm:
-            return MeetingOutcomeWriteResult(
-                action="update",
-                state="preview",
-                ready=True,
-                message="Ask for confirmation, then call again with confirm=true to update it.",
-                outcome_id=outcome_id,
-                meeting_agenda_item_id=agenda_item_id,
-                payload=payload,
-                validation_errors={},
-                result=None,
+        async def _commit(p: dict[str, Any]) -> MeetingOutcomeSummary:
+            record = await call_version_gated(
+                lambda: self._api.update(outcome_id, p), feature="Meeting outcomes", floor="17.6"
             )
+            return self._stamp(record.summary)
 
-        access.ensure_write_enabled("meeting", settings=self._settings)
-        record = await call_version_gated(
-            lambda: self._api.update(outcome_id, payload), feature="Meeting outcomes", floor="17.6"
-        )
-        result = self._stamp(record.summary)
-        return MeetingOutcomeWriteResult(
-            action="update",
-            state="confirmed",
-            ready=True,
-            message="Meeting outcome updated successfully.",
-            outcome_id=result.id,
-            meeting_agenda_item_id=result.meeting_agenda_item_id,
+        write_outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=result,
+            identity={"outcome_id": outcome_id, "meeting_agenda_item_id": agenda_item_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("meeting", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"outcome_id": d.id, "meeting_agenda_item_id": d.meeting_agenda_item_id},
+            rejected_message="",
+            preview_message="Ask for confirmation, then call again with confirm=true to update it.",
+            success_message="Meeting outcome updated successfully.",
         )
+        return self._to_write_result("update", write_outcome)
 
     async def delete(self, *, outcome_id: int, confirm: bool = False) -> MeetingOutcomeWriteResult:
         current = await call_version_gated(lambda: self._api.get(outcome_id), feature="Meeting outcomes", floor="17.6")
         agenda_item_id = current.summary.meeting_agenda_item_id
         await self._ensure_outcome_allowed(outcome_id, agenda_item_id, write=True)
-        outcome = self._stamp(current.summary)
-        payload = {"id": outcome.id, "kind": outcome.kind}
+        outcome_summary = self._stamp(current.summary)
+        payload = {"id": outcome_summary.id, "kind": outcome_summary.kind}
 
-        if not confirm:
-            return MeetingOutcomeWriteResult(
-                action="delete",
-                state="preview",
-                ready=True,
-                message="OpenProject found the outcome. Ask for confirmation, then call again with confirm=true to delete it.",
-                outcome_id=outcome.id,
-                meeting_agenda_item_id=outcome.meeting_agenda_item_id,
-                payload=payload,
-                validation_errors={},
-                result=None,
-            )
+        async def _commit(p: dict[str, Any]) -> MeetingOutcomeSummary:
+            await call_version_gated(lambda: self._api.delete(outcome_id), feature="Meeting outcomes", floor="17.6")
+            return outcome_summary
 
-        access.ensure_write_enabled("meeting", settings=self._settings)
-        await call_version_gated(lambda: self._api.delete(outcome_id), feature="Meeting outcomes", floor="17.6")
-        return MeetingOutcomeWriteResult(
-            action="delete",
-            state="confirmed",
-            ready=True,
-            message="Meeting outcome deleted successfully.",
-            outcome_id=outcome.id,
-            meeting_agenda_item_id=outcome.meeting_agenda_item_id,
+        write_outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=outcome,
+            identity={"outcome_id": outcome_summary.id, "meeting_agenda_item_id": outcome_summary.meeting_agenda_item_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("meeting", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"outcome_id": d.id, "meeting_agenda_item_id": d.meeting_agenda_item_id},
+            rejected_message="",
+            preview_message="OpenProject found the outcome. Ask for confirmation, then call again with confirm=true to delete it.",
+            success_message="Meeting outcome deleted successfully.",
+        )
+        return self._to_write_result("delete", write_outcome)
+
+    def _to_write_result(self, action: str, outcome: _WriteOutcome[MeetingOutcomeSummary]) -> MeetingOutcomeWriteResult:
+        return MeetingOutcomeWriteResult(
+            action=action,
+            state=outcome.state,
+            ready=outcome.ready,
+            message=outcome.message,
+            payload=outcome.payload,
+            validation_errors=outcome.validation_errors,
+            result=outcome.detail,
+            **outcome.identity,
         )

@@ -309,31 +309,35 @@ class MeetingService:
         meeting = self._stamp(current.summary)
         payload = {"id": meeting.id, "title": meeting.title}
 
-        if not confirm:
-            return MeetingWriteResult(
-                action="delete",
-                state="preview",
-                ready=True,
-                message="OpenProject found the meeting. Ask for confirmation, then call again with confirm=true to delete it.",
-                meeting_id=meeting.id,
-                project=meeting.project,
-                payload=payload,
-                validation_errors={},
-                result=None,
-            )
+        async def _commit(p: dict[str, Any]) -> MeetingSummary:
+            await call_version_gated(lambda: self._api.delete(meeting_id), feature="Meetings", floor="17.4")
+            return meeting
 
-        access.ensure_write_enabled("meeting", settings=self._settings)
-        await call_version_gated(lambda: self._api.delete(meeting_id), feature="Meetings", floor="17.4")
-        return MeetingWriteResult(
-            action="delete",
-            state="confirmed",
-            ready=True,
-            message="Meeting deleted successfully.",
-            meeting_id=meeting.id,
-            project=meeting.project,
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=meeting,
+            identity={"meeting_id": meeting.id, "project": meeting.project},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("meeting", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"meeting_id": d.id, "project": d.project},
+            rejected_message="",
+            preview_message="OpenProject found the meeting. Ask for confirmation, then call again with confirm=true to delete it.",
+            success_message="Meeting deleted successfully.",
+        )
+        # Unlike create/update's outcome.detail (a full API record with its
+        # own `.summary`), delete's commit already returns the pre-stamped
+        # MeetingSummary directly -- _to_write_result's `.summary` unwrap
+        # would not apply here.
+        return MeetingWriteResult(
+            action="delete",
+            state=outcome.state,
+            ready=outcome.ready,
+            message=outcome.message,
+            payload=outcome.payload,
+            validation_errors=outcome.validation_errors,
+            result=outcome.detail,
+            **outcome.identity,
         )
 
     def _to_write_result(self, action: str, outcome: _WriteOutcome[Any]) -> MeetingWriteResult:

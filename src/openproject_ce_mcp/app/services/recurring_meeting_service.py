@@ -45,6 +45,7 @@ from ..policies import scope as scope_policy
 from ..ports.project_ref import ProjectRefResolver
 from ..ports.recurring_meeting_api import RecurringMeetingApi
 from ..version_gate import call_version_gated
+from ._write_outcome import _finalize_write, _WriteOutcome
 
 
 class RecurringMeetingService:
@@ -241,36 +242,26 @@ class RecurringMeetingService:
         )
         identity_project = payload.get("_links", {}).get("project", {}).get("title") or project_payload.get("name")
 
-        if not confirm:
-            return RecurringMeetingWriteResult(
-                action="create",
-                state="preview",
-                ready=True,
-                message=(
-                    "OpenProject is ready to create this recurring meeting. Ask for confirmation, "
-                    "then call again with confirm=true."
-                ),
-                recurring_meeting_id=None,
-                project=identity_project,
-                payload=payload,
-                validation_errors={},
-                result=None,
-            )
+        async def _commit(p: dict[str, Any]) -> RecurringMeetingSummary:
+            record = await call_version_gated(lambda: self._api.create(p), feature="Recurring meetings", floor="17.4")
+            return self._stamp(record.summary)
 
-        access.ensure_write_enabled("meeting", settings=self._settings)
-        record = await call_version_gated(lambda: self._api.create(payload), feature="Recurring meetings", floor="17.4")
-        result = self._stamp(record.summary)
-        return RecurringMeetingWriteResult(
-            action="create",
-            state="confirmed",
-            ready=True,
-            message="Recurring meeting created successfully.",
-            recurring_meeting_id=result.id,
-            project=result.project,
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=result,
+            identity={"recurring_meeting_id": None, "project": identity_project},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("meeting", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"recurring_meeting_id": d.id, "project": d.project},
+            rejected_message="",
+            preview_message=(
+                "OpenProject is ready to create this recurring meeting. Ask for confirmation, "
+                "then call again with confirm=true."
+            ),
+            success_message="Recurring meeting created successfully.",
         )
+        return self._to_meeting_write_result("create", outcome)
 
     async def update(
         self,
@@ -305,35 +296,25 @@ class RecurringMeetingService:
             monthly_weekday=None,
         )
 
-        if not confirm:
-            return RecurringMeetingWriteResult(
-                action="update",
-                state="preview",
-                ready=True,
-                message="Ask for confirmation, then call again with confirm=true to update it.",
-                recurring_meeting_id=recurring_meeting_id,
-                project=current.summary.project,
-                payload=payload,
-                validation_errors={},
-                result=None,
+        async def _commit(p: dict[str, Any]) -> RecurringMeetingSummary:
+            record = await call_version_gated(
+                lambda: self._api.update(recurring_meeting_id, p), feature="Recurring meetings", floor="17.4"
             )
+            return self._stamp(record.summary)
 
-        access.ensure_write_enabled("meeting", settings=self._settings)
-        record = await call_version_gated(
-            lambda: self._api.update(recurring_meeting_id, payload), feature="Recurring meetings", floor="17.4"
-        )
-        result = self._stamp(record.summary)
-        return RecurringMeetingWriteResult(
-            action="update",
-            state="confirmed",
-            ready=True,
-            message="Recurring meeting updated successfully.",
-            recurring_meeting_id=result.id,
-            project=result.project,
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=result,
+            identity={"recurring_meeting_id": recurring_meeting_id, "project": current.summary.project},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("meeting", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"recurring_meeting_id": d.id, "project": d.project},
+            rejected_message="",
+            preview_message="Ask for confirmation, then call again with confirm=true to update it.",
+            success_message="Recurring meeting updated successfully.",
         )
+        return self._to_meeting_write_result("update", outcome)
 
     async def delete(self, *, recurring_meeting_id: int, confirm: bool = False) -> RecurringMeetingWriteResult:
         current = await call_version_gated(
@@ -345,36 +326,41 @@ class RecurringMeetingService:
         recurring_meeting = self._stamp(current.summary)
         payload = {"id": recurring_meeting.id, "title": recurring_meeting.title}
 
-        if not confirm:
-            return RecurringMeetingWriteResult(
-                action="delete",
-                state="preview",
-                ready=True,
-                message=(
-                    "OpenProject found the recurring meeting. Ask for confirmation, then call again "
-                    "with confirm=true to delete it."
-                ),
-                recurring_meeting_id=recurring_meeting.id,
-                project=recurring_meeting.project,
-                payload=payload,
-                validation_errors={},
-                result=None,
+        async def _commit(p: dict[str, Any]) -> RecurringMeetingSummary:
+            await call_version_gated(
+                lambda: self._api.delete(recurring_meeting_id), feature="Recurring meetings", floor="17.4"
             )
+            return recurring_meeting
 
-        access.ensure_write_enabled("meeting", settings=self._settings)
-        await call_version_gated(
-            lambda: self._api.delete(recurring_meeting_id), feature="Recurring meetings", floor="17.4"
-        )
-        return RecurringMeetingWriteResult(
-            action="delete",
-            state="confirmed",
-            ready=True,
-            message="Recurring meeting deleted successfully.",
-            recurring_meeting_id=recurring_meeting.id,
-            project=recurring_meeting.project,
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=recurring_meeting,
+            identity={"recurring_meeting_id": recurring_meeting.id, "project": recurring_meeting.project},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("meeting", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"recurring_meeting_id": d.id, "project": d.project},
+            rejected_message="",
+            preview_message=(
+                "OpenProject found the recurring meeting. Ask for confirmation, then call again "
+                "with confirm=true to delete it."
+            ),
+            success_message="Recurring meeting deleted successfully.",
+        )
+        return self._to_meeting_write_result("delete", outcome)
+
+    def _to_meeting_write_result(
+        self, action: str, outcome: _WriteOutcome[RecurringMeetingSummary]
+    ) -> RecurringMeetingWriteResult:
+        return RecurringMeetingWriteResult(
+            action=action,
+            state=outcome.state,
+            ready=outcome.ready,
+            message=outcome.message,
+            payload=outcome.payload,
+            validation_errors=outcome.validation_errors,
+            result=outcome.detail,
+            **outcome.identity,
         )
 
     async def list_occurrences(
@@ -415,39 +401,30 @@ class RecurringMeetingService:
         await self._ensure_recurring_meeting_write_allowed(recurring_meeting_id)
         payload = {"recurring_meeting_id": recurring_meeting_id, "start_time": start_time}
 
-        if not confirm:
-            return RecurringMeetingOccurrenceWriteResult(
-                action="init",
-                state="preview",
-                ready=True,
-                message=(
-                    "OpenProject is ready to materialize this occurrence into a real meeting. "
-                    "Ask for confirmation, then call again with confirm=true."
-                ),
-                recurring_meeting_id=recurring_meeting_id,
-                start_time=start_time,
-                payload=payload,
-                validation_errors={},
-                result=None,
+        async def _commit(p: dict[str, Any]) -> MeetingSummary:
+            meeting: MeetingSummary = await call_version_gated(
+                lambda: self._api.init_occurrence(recurring_meeting_id, start_time=start_time),
+                feature="Recurring meeting occurrences",
+                floor="17.4",
             )
+            return hidden_fields.apply_hidden_fields("meeting", meeting, settings=self._settings)  # type: ignore[no-any-return]
 
-        access.ensure_write_enabled("meeting", settings=self._settings)
-        meeting: MeetingSummary = await call_version_gated(
-            lambda: self._api.init_occurrence(recurring_meeting_id, start_time=start_time),
-            feature="Recurring meeting occurrences",
-            floor="17.4",
-        )
-        return RecurringMeetingOccurrenceWriteResult(
-            action="init",
-            state="confirmed",
-            ready=True,
-            message="Occurrence materialized into a real meeting successfully.",
-            recurring_meeting_id=recurring_meeting_id,
-            start_time=start_time,
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=hidden_fields.apply_hidden_fields("meeting", meeting, settings=self._settings),
+            identity={"recurring_meeting_id": recurring_meeting_id, "start_time": start_time},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("meeting", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"recurring_meeting_id": recurring_meeting_id, "start_time": start_time},
+            rejected_message="",
+            preview_message=(
+                "OpenProject is ready to materialize this occurrence into a real meeting. "
+                "Ask for confirmation, then call again with confirm=true."
+            ),
+            success_message="Occurrence materialized into a real meeting successfully.",
         )
+        return self._to_write_result("init", outcome)
 
     async def cancel_occurrence(
         self, *, recurring_meeting_id: int, start_time: str, confirm: bool = False
@@ -455,37 +432,41 @@ class RecurringMeetingService:
         await self._ensure_recurring_meeting_write_allowed(recurring_meeting_id)
         payload = {"recurring_meeting_id": recurring_meeting_id, "start_time": start_time}
 
-        if not confirm:
-            return RecurringMeetingOccurrenceWriteResult(
-                action="cancel",
-                state="preview",
-                ready=True,
-                message=(
-                    "Ask for confirmation, then call again with confirm=true to cancel it. If this "
-                    "occurrence has not yet been materialized, OpenProject will create a new, "
-                    "permanently cancelled meeting -- this call returns no id for it."
-                ),
-                recurring_meeting_id=recurring_meeting_id,
-                start_time=start_time,
-                payload=payload,
-                validation_errors={},
-                result=None,
+        async def _commit(p: dict[str, Any]) -> None:
+            await call_version_gated(
+                lambda: self._api.cancel_occurrence(recurring_meeting_id, start_time=start_time),
+                feature="Recurring meeting occurrences",
+                floor="17.4",
             )
 
-        access.ensure_write_enabled("meeting", settings=self._settings)
-        await call_version_gated(
-            lambda: self._api.cancel_occurrence(recurring_meeting_id, start_time=start_time),
-            feature="Recurring meeting occurrences",
-            floor="17.4",
-        )
-        return RecurringMeetingOccurrenceWriteResult(
-            action="cancel",
-            state="confirmed",
-            ready=True,
-            message="Occurrence cancelled successfully.",
-            recurring_meeting_id=recurring_meeting_id,
-            start_time=start_time,
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=None,
+            identity={"recurring_meeting_id": recurring_meeting_id, "start_time": start_time},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("meeting", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"recurring_meeting_id": recurring_meeting_id, "start_time": start_time},
+            rejected_message="",
+            preview_message=(
+                "Ask for confirmation, then call again with confirm=true to cancel it. If this "
+                "occurrence has not yet been materialized, OpenProject will create a new, "
+                "permanently cancelled meeting -- this call returns no id for it."
+            ),
+            success_message="Occurrence cancelled successfully.",
+        )
+        return self._to_write_result("cancel", outcome)
+
+    def _to_write_result(
+        self, action: str, outcome: _WriteOutcome[MeetingSummary | None]
+    ) -> RecurringMeetingOccurrenceWriteResult:
+        return RecurringMeetingOccurrenceWriteResult(
+            action=action,
+            state=outcome.state,
+            ready=outcome.ready,
+            message=outcome.message,
+            payload=outcome.payload,
+            validation_errors=outcome.validation_errors,
+            result=outcome.detail,
+            **outcome.identity,
         )

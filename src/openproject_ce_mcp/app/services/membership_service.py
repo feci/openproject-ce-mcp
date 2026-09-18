@@ -203,32 +203,23 @@ class MembershipService:
         membership = self._stamp(current.summary)
         payload = {"id": membership.id, "principal": membership.principal_name, "roles": membership.role_names}
 
-        if not confirm:
-            return MembershipWriteResult(
-                action="delete",
-                state="preview",
-                ready=True,
-                message="OpenProject found the membership. Ask for confirmation, then call again with confirm=true to delete it.",
-                membership_id=membership.id,
-                project=membership.project_name,
-                payload=payload,
-                validation_errors={},
-                result=None,
-            )
+        async def _commit(p: dict[str, Any]) -> MembershipSummary:
+            await self._api.delete(membership_id)
+            return membership
 
-        access.ensure_write_enabled("membership", settings=self._settings)
-        await self._api.delete(membership_id)
-        return MembershipWriteResult(
-            action="delete",
-            state="confirmed",
-            ready=True,
-            message="Membership deleted successfully.",
-            membership_id=membership.id,
-            project=membership.project_name,
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=membership,
+            identity={"membership_id": membership.id, "project": membership.project_name},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("membership", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"membership_id": d.id, "project": d.project_name},
+            rejected_message="",
+            preview_message="OpenProject found the membership. Ask for confirmation, then call again with confirm=true to delete it.",
+            success_message="Membership deleted successfully.",
         )
+        return self._to_write_result("delete", outcome)
 
     async def _resolve_role_hrefs(self, roles: list[str]) -> list[str]:
         # Kept as a private Service method (not a resolver) since it operates

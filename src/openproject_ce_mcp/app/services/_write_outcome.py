@@ -16,6 +16,31 @@ Both exported names are underscore-prefixed (not just the module) -- the
 architecture-boundary test requires every public class under app/services/
 to be named `*Service`/`*Resolver`; this module holds neither, so its
 exports stay private the same way every per-Service copy it replaces did.
+
+`gate_before_preview` (default False): three domains -- Group (create/update/
+delete), Storage (create/update/delete), and User (delete only) -- have no
+prior GET to authorize an unauthorized preview request against, so they check
+`ensure_write_enabled` unconditionally, even for confirm=False, rather than
+only inside the confirmed branch every other domain uses. This is a real,
+audited, minority-but-recurring shape (OPM-2705), not a one-off bug: making
+it an explicit parameter here keeps a single orchestration point for every
+domain instead of forcing those three to hand-roll their own copy or forcing
+every other domain to pay for a check it doesn't want. The gate still runs
+after the validation_errors check would normally short-circuit -- these three
+domains have no validation_errors/form concept at all (always called with
+`validation_errors={}`), so ordering relative to that branch is moot for them
+in practice.
+
+`preview_detail` (default None): every `delete()` that needs to show the
+about-to-be-deleted record in its preview response (Version, Board, Grid,
+Membership, Meeting, Project, TimeEntry, WorkPackage, Storage) fetches that
+record BEFORE the confirm branch (needed for scope/permission checks on the
+target, independent of write-orchestration), then wants to surface it as
+`result` on the preview response even though nothing was committed yet. This
+is genuinely different from `commit`'s return value (which only exists on
+the confirmed branch) -- passing the pre-fetched record through explicitly,
+rather than threading it through `commit`, keeps `commit` a pure "do the
+mutation" callable that's never invoked on a preview.
 """
 
 from __future__ import annotations
@@ -51,9 +76,15 @@ async def _finalize_write(
     rejected_message: str,
     preview_message: str,
     success_message: str,
+    gate_before_preview: bool = False,
+    preview_detail: Any = None,
 ) -> _WriteOutcome[Any]:
     """Rejected/preview/committed state machine, shared by every Service that
-    needs it (Versions, Projects, Memberships)."""
+    needs it (Versions, Projects, Memberships, Group, Storage, User).
+
+    See the module docstring for `gate_before_preview`/`preview_detail`."""
+    if gate_before_preview:
+        ensure_write_enabled()
     if validation_errors:
         return _WriteOutcome(
             ready=False,
@@ -71,10 +102,11 @@ async def _finalize_write(
             message=preview_message,
             payload=payload,
             validation_errors={},
-            detail=None,
+            detail=preview_detail,
             identity=identity,
         )
-    ensure_write_enabled()
+    if not gate_before_preview:
+        ensure_write_enabled()
     detail = await commit(payload)
     return _WriteOutcome(
         ready=True,

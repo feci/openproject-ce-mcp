@@ -25,7 +25,9 @@ form-based `_finalize_write` shape they don't fit.
 UNCONDITIONALLY (not gated inside the confirm branch): none of them have a
 prior GET to piggyback the check on (unlike e.g. `MembershipService.delete()`,
 which checks only inside `if confirm:` because it already does a prior GET
-for the allowlist check).
+for the allowlist check). `delete()` is wired via `_finalize_write`'s
+`gate_before_preview=True` (OPM-2705), same as Group and Storage; lock/unlock
+keep their own `_finalize_action` (a genuinely different, form-less shape).
 
 `create()`/`update()`/lock/unlock's `_finalize_action` all call
 `hidden_fields.ensure_field_writable("user", <field>, ...)` for every field
@@ -43,6 +45,7 @@ from ..pagination import effective_limit as _effective_limit
 from ..pagination import paginate_server, scan_records_and_paginate
 from ..policies import access, hidden_fields
 from ..ports.user_api import UserApi
+from ._write_outcome import _finalize_write, _WriteOutcome
 
 
 class UserService:
@@ -145,47 +148,30 @@ class UserService:
             hidden_fields.ensure_field_writable("user", "language", settings=self._settings)
             payload["language"] = language
         form = await self._api.create_form(payload)
-        if form.validation_errors:
-            return self._write_result(
-                action="create",
-                state="invalid" if confirm else "rejected",
-                ready=False,
-                message="OpenProject rejected the proposed user changes. Fix the validation errors before confirming.",
-                user_id=None,
-                payload=form.payload,
-                validation_errors=form.validation_errors,
-                result=None,
-            )
-        if not confirm:
-            return self._write_result(
-                action="create",
-                state="preview",
-                ready=True,
-                message="OpenProject validated the user. Ask for confirmation, then call again with confirm=true to create it.",
-                user_id=None,
-                payload=form.payload,
-                validation_errors={},
-                result=None,
-            )
-        access.ensure_write_enabled("admin", settings=self._settings)
-        commit_payload = form.payload
-        if password is not None:
-            # OpenProject's users/form response never echoes `password` back
-            # (a security precaution, not a validation gap) -- committing
-            # form.payload verbatim would silently drop it, so it's restored
-            # from the caller's own value before the actual write.
-            commit_payload = {**commit_payload, "password": password}
-        detail = await self._api.commit_create(commit_payload)
-        return self._write_result(
-            action="create",
-            state="confirmed",
-            ready=True,
-            message="User created successfully.",
-            user_id=detail.id,
+
+        async def _commit(p: dict[str, Any]) -> UserDetail:
+            commit_payload = p
+            if password is not None:
+                # OpenProject's users/form response never echoes `password`
+                # back (a security precaution, not a validation gap) --
+                # committing form.payload verbatim would silently drop it, so
+                # it's restored from the caller's own value before the write.
+                commit_payload = {**commit_payload, "password": password}
+            return await self._api.commit_create(commit_payload)
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=form.payload,
-            validation_errors={},
-            result=detail,
+            validation_errors=form.validation_errors,
+            identity={"user_id": None},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("admin", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"user_id": d.id},
+            rejected_message="OpenProject rejected the proposed user changes. Fix the validation errors before confirming.",
+            preview_message="OpenProject validated the user. Ask for confirmation, then call again with confirm=true to create it.",
+            success_message="User created successfully.",
         )
+        return self._to_write_result("create", outcome)
 
     async def update(
         self,
@@ -219,68 +205,42 @@ class UserService:
             hidden_fields.ensure_field_writable("user", "language", settings=self._settings)
             payload["language"] = language
         form = await self._api.update_form(user_id, payload)
-        if form.validation_errors:
-            return self._write_result(
-                action="update",
-                state="invalid" if confirm else "rejected",
-                ready=False,
-                message="OpenProject rejected the proposed user changes. Fix the validation errors before confirming.",
-                user_id=user_id,
-                payload=form.payload,
-                validation_errors=form.validation_errors,
-                result=None,
-            )
-        if not confirm:
-            return self._write_result(
-                action="update",
-                state="preview",
-                ready=True,
-                message="OpenProject validated the user change. Ask for confirmation, then call again with confirm=true to write it.",
-                user_id=user_id,
-                payload=form.payload,
-                validation_errors={},
-                result=None,
-            )
-        access.ensure_write_enabled("admin", settings=self._settings)
-        detail = await self._api.commit_update(user_id, form.payload)
-        return self._write_result(
-            action="update",
-            state="confirmed",
-            ready=True,
-            message="User updated successfully.",
-            user_id=detail.id,
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=form.payload,
-            validation_errors={},
-            result=detail,
+            validation_errors=form.validation_errors,
+            identity={"user_id": user_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("admin", settings=self._settings),
+            commit=lambda p: self._api.commit_update(user_id, p),
+            committed_identity=lambda d: {"user_id": d.id},
+            rejected_message="OpenProject rejected the proposed user changes. Fix the validation errors before confirming.",
+            preview_message="OpenProject validated the user change. Ask for confirmation, then call again with confirm=true to write it.",
+            success_message="User updated successfully.",
         )
+        return self._to_write_result("update", outcome)
 
     async def delete(self, user_id: int, *, confirm: bool = False) -> UserWriteResult:
-        # Checked unconditionally (not just on confirm) -- there is no prior
-        # GET to gate an unauthorized preview request on.
-        access.ensure_write_enabled("admin", settings=self._settings)
+        # No detail fetched on either branch -- delete's commit callable
+        # returns None, matching the pre-existing result=None shape.
         payload = {"id": user_id}
-        if not confirm:
-            return self._write_result(
-                action="delete",
-                state="preview",
-                ready=True,
-                message="OpenProject is ready to delete the user. Ask for confirmation, then call again with confirm=true.",
-                user_id=user_id,
-                payload=payload,
-                validation_errors={},
-                result=None,
-            )
-        await self._api.commit_delete(user_id)
-        return self._write_result(
-            action="delete",
-            state="confirmed",
-            ready=True,
-            message="User deleted successfully.",
-            user_id=user_id,
+
+        async def _commit(p: dict[str, Any]) -> None:
+            await self._api.commit_delete(user_id)
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=None,
+            identity={"user_id": user_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("admin", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"user_id": user_id},
+            rejected_message="",
+            preview_message="OpenProject is ready to delete the user. Ask for confirmation, then call again with confirm=true.",
+            success_message="User deleted successfully.",
+            gate_before_preview=True,
         )
+        return self._to_write_result("delete", outcome)
 
     async def lock(self, user_id: int, *, confirm: bool = False) -> UserWriteResult:
         return await self._finalize_action(
@@ -365,4 +325,16 @@ class UserService:
             payload=payload,
             validation_errors=validation_errors,
             result=self._stamp(result) if result is not None else None,
+        )
+
+    def _to_write_result(self, action: str, outcome: _WriteOutcome[UserDetail | None]) -> UserWriteResult:
+        return UserWriteResult(
+            action=action,
+            state=outcome.state,
+            ready=outcome.ready,
+            message=outcome.message,
+            payload=outcome.payload,
+            validation_errors=outcome.validation_errors,
+            result=self._stamp(outcome.detail) if outcome.detail is not None else None,
+            **outcome.identity,
         )

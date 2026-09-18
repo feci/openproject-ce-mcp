@@ -335,32 +335,23 @@ class BoardService:
         board = self._stamp(current.detail)
         payload = {"id": board.id, "name": board.name}
 
-        if not confirm:
-            return BoardWriteResult(
-                action="delete",
-                state="preview",
-                ready=True,
-                message="OpenProject found the board. Ask for confirmation, then call again with confirm=true to delete it.",
-                board_id=board.id,
-                project=board.project,
-                payload=payload,
-                validation_errors={},
-                result=None,
-            )
+        async def _commit(p: dict[str, Any]) -> BoardDetail:
+            await self._api.delete(board_id)
+            return board
 
-        access.ensure_write_enabled("board", settings=self._settings)
-        await self._api.delete(board_id)
-        return BoardWriteResult(
-            action="delete",
-            state="confirmed",
-            ready=True,
-            message="Board deleted successfully.",
-            board_id=board.id,
-            project=board.project,
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=board,
+            identity={"board_id": board.id, "project": board.project},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("board", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"board_id": d.id, "project": d.project},
+            rejected_message="",
+            preview_message="OpenProject found the board. Ask for confirmation, then call again with confirm=true to delete it.",
+            success_message="Board deleted successfully.",
         )
+        return self._to_write_result("delete", outcome)
 
     async def _build_write_payload(
         self,

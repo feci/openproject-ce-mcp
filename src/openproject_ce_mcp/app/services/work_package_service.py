@@ -2233,31 +2233,31 @@ class WorkPackageService:
         detail = self._stamp_detail(record.to_detail())
         payload = {"id": detail.id, "subject": detail.subject, "lockVersion": detail.lock_version}
 
-        if not confirm:
-            return WorkPackageWriteResult(
-                action="delete",
-                state="preview",
-                ready=True,
-                message="OpenProject is ready to delete this work package. Ask for confirmation, then call again with confirm=true.",
-                work_package_id=detail.id,
-                project=detail.project,
-                payload=payload,
-                validation_errors={},
-                result=detail,
-            )
+        async def _commit(p: dict[str, Any]) -> None:
+            await self._api.delete(ref)
 
-        access.ensure_write_enabled("work_package", settings=self._settings)
-        await self._api.delete(ref)
-        return WorkPackageWriteResult(
-            action="delete",
-            state="confirmed",
-            ready=True,
-            message="Work package deleted successfully.",
-            work_package_id=detail.id,
-            project=detail.project,
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=None,
+            identity={"work_package_id": detail.id, "project": detail.project},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("work_package", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"work_package_id": detail.id, "project": detail.project},
+            rejected_message="",
+            preview_message="OpenProject is ready to delete this work package. Ask for confirmation, then call again with confirm=true.",
+            success_message="Work package deleted successfully.",
+            preview_detail=detail,
+        )
+        return WorkPackageWriteResult(
+            action="delete",
+            state=outcome.state,
+            ready=outcome.ready,
+            message=outcome.message,
+            payload=outcome.payload,
+            validation_errors=outcome.validation_errors,
+            result=outcome.detail,
+            **outcome.identity,
         )
 
     async def _fill_missing_activity_user(self, activity: dict[str, Any]) -> dict[str, Any]:

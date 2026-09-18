@@ -41,6 +41,12 @@ development baseline.
   `__version__` is derived from installed package metadata at runtime instead
   of being hand-maintained separately. CI verifies wheel/sdist build
   reproducibility and that a release tag matches the declared version.
+- Unified the preview/confirm write-orchestration state machine across every
+  remaining write-capable domain, removing several hundred lines of
+  duplicated per-domain confirm/commit logic. A confirmed attachment upload
+  now reports the actual file name/size uploaded rather than a stale
+  pre-commit stat if the file changed size between the preview check and the
+  confirmed write.
 
 ### Removed
 

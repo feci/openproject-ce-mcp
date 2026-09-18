@@ -208,32 +208,23 @@ class GridService:
         grid = self._stamp(current.summary)
         payload = {"id": grid.id}
 
-        if not confirm:
-            return GridWriteResult(
-                action="delete",
-                state="preview",
-                ready=True,
-                message="OpenProject found the grid. Ask for confirmation, then call again with confirm=true to delete it.",
-                grid_id=grid.id,
-                scope=grid.scope,
-                payload=payload,
-                validation_errors={},
-                result=None,
-            )
+        async def _commit(p: dict[str, Any]) -> GridSummary:
+            await self._api.delete(grid_id)
+            return grid
 
-        access.ensure_write_enabled("project", settings=self._settings)
-        await self._api.delete(grid_id)
-        return GridWriteResult(
-            action="delete",
-            state="confirmed",
-            ready=True,
-            message="Grid deleted successfully.",
-            grid_id=grid.id,
-            scope=grid.scope,
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=grid,
+            identity={"grid_id": grid.id, "scope": grid.scope},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("project", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"grid_id": d.id, "scope": d.scope},
+            rejected_message="",
+            preview_message="OpenProject found the grid. Ask for confirmation, then call again with confirm=true to delete it.",
+            success_message="Grid deleted successfully.",
         )
+        return self._to_write_result("delete", outcome)
 
     def _to_write_result(self, action: str, outcome: _WriteOutcome[GridSummary]) -> GridWriteResult:
         return GridWriteResult(

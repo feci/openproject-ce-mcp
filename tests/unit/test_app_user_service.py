@@ -511,6 +511,19 @@ async def test_delete_denies_target_outside_admin_write_and_never_calls_commit()
 
 
 @pytest.mark.asyncio
+async def test_delete_preview_also_denied_without_admin_write_enabled() -> None:
+    # Same unconditional-check tradeoff as lock()/unlock(): even a pure
+    # preview (confirm=False) is rejected (OPM-2705).
+    api = _FakeUserApi()
+    service = _service(api)
+
+    with pytest.raises(PermissionDeniedError):
+        await service.delete(5, confirm=False)
+
+    assert api.commit_delete_calls == []
+
+
+@pytest.mark.asyncio
 async def test_delete_preview_does_not_call_commit() -> None:
     api = _FakeUserApi()
     service = _service(api, settings=_admin_write_settings())

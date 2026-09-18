@@ -43,6 +43,7 @@ from ..ports.meeting_agenda_item_api import MeetingAgendaItemApi
 from ..ports.meeting_api import MeetingApi
 from ..ports.work_package_ref import WorkPackageIdResolver
 from ..version_gate import call_version_gated
+from ._write_outcome import _finalize_write, _WriteOutcome
 
 
 class MeetingAgendaItemService:
@@ -222,38 +223,26 @@ class MeetingAgendaItemService:
             work_package_id=resolved_work_package_id,
             meeting_section_id=meeting_section_id,
         )
-        if not confirm:
-            return MeetingAgendaItemWriteResult(
-                action="create",
-                state="preview",
-                ready=True,
-                message=(
-                    "OpenProject is ready to create this meeting agenda item. Ask for confirmation, "
-                    "then call again with confirm=true."
-                ),
-                agenda_item_id=None,
-                meeting_id=meeting_id,
-                payload=payload,
-                validation_errors={},
-                result=None,
-            )
+        async def _commit(p: dict[str, Any]) -> MeetingAgendaItemSummary:
+            record = await call_version_gated(lambda: self._api.create(p), feature="Meeting agenda items", floor="17.6")
+            return self._stamp(record.summary)
 
-        access.ensure_write_enabled("meeting", settings=self._settings)
-        record = await call_version_gated(
-            lambda: self._api.create(payload), feature="Meeting agenda items", floor="17.6"
-        )
-        result = self._stamp(record.summary)
-        return MeetingAgendaItemWriteResult(
-            action="create",
-            state="confirmed",
-            ready=True,
-            message="Meeting agenda item created successfully.",
-            agenda_item_id=result.id,
-            meeting_id=result.meeting_id,
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=result,
+            identity={"agenda_item_id": None, "meeting_id": meeting_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("meeting", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"agenda_item_id": d.id, "meeting_id": d.meeting_id},
+            rejected_message="",
+            preview_message=(
+                "OpenProject is ready to create this meeting agenda item. Ask for confirmation, "
+                "then call again with confirm=true."
+            ),
+            success_message="Meeting agenda item created successfully.",
         )
+        return self._to_write_result("create", outcome)
 
     async def update(
         self,
@@ -288,35 +277,25 @@ class MeetingAgendaItemService:
             work_package_id=resolved_work_package_id,
             meeting_section_id=meeting_section_id,
         )
-        if not confirm:
-            return MeetingAgendaItemWriteResult(
-                action="update",
-                state="preview",
-                ready=True,
-                message="Ask for confirmation, then call again with confirm=true to update it.",
-                agenda_item_id=agenda_item_id,
-                meeting_id=meeting_id,
-                payload=payload,
-                validation_errors={},
-                result=None,
+        async def _commit(p: dict[str, Any]) -> MeetingAgendaItemSummary:
+            record = await call_version_gated(
+                lambda: self._api.update(agenda_item_id, p), feature="Meeting agenda items", floor="17.6"
             )
+            return self._stamp(record.summary)
 
-        access.ensure_write_enabled("meeting", settings=self._settings)
-        record = await call_version_gated(
-            lambda: self._api.update(agenda_item_id, payload), feature="Meeting agenda items", floor="17.6"
-        )
-        result = self._stamp(record.summary)
-        return MeetingAgendaItemWriteResult(
-            action="update",
-            state="confirmed",
-            ready=True,
-            message="Meeting agenda item updated successfully.",
-            agenda_item_id=result.id,
-            meeting_id=result.meeting_id,
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=result,
+            identity={"agenda_item_id": agenda_item_id, "meeting_id": meeting_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("meeting", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"agenda_item_id": d.id, "meeting_id": d.meeting_id},
+            rejected_message="",
+            preview_message="Ask for confirmation, then call again with confirm=true to update it.",
+            success_message="Meeting agenda item updated successfully.",
         )
+        return self._to_write_result("update", outcome)
 
     async def delete(self, *, agenda_item_id: int, confirm: bool = False) -> MeetingAgendaItemWriteResult:
         current = await call_version_gated(
@@ -331,29 +310,32 @@ class MeetingAgendaItemService:
         item = self._stamp(current.summary)
         payload = {"id": item.id, "title": item.title}
 
-        if not confirm:
-            return MeetingAgendaItemWriteResult(
-                action="delete",
-                state="preview",
-                ready=True,
-                message="OpenProject found the agenda item. Ask for confirmation, then call again with confirm=true to delete it.",
-                agenda_item_id=item.id,
-                meeting_id=item.meeting_id,
-                payload=payload,
-                validation_errors={},
-                result=None,
-            )
+        async def _commit(p: dict[str, Any]) -> MeetingAgendaItemSummary:
+            await call_version_gated(lambda: self._api.delete(agenda_item_id), feature="Meeting agenda items", floor="17.6")
+            return item
 
-        access.ensure_write_enabled("meeting", settings=self._settings)
-        await call_version_gated(lambda: self._api.delete(agenda_item_id), feature="Meeting agenda items", floor="17.6")
-        return MeetingAgendaItemWriteResult(
-            action="delete",
-            state="confirmed",
-            ready=True,
-            message="Meeting agenda item deleted successfully.",
-            agenda_item_id=item.id,
-            meeting_id=item.meeting_id,
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=item,
+            identity={"agenda_item_id": item.id, "meeting_id": item.meeting_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("meeting", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"agenda_item_id": d.id, "meeting_id": d.meeting_id},
+            rejected_message="",
+            preview_message="OpenProject found the agenda item. Ask for confirmation, then call again with confirm=true to delete it.",
+            success_message="Meeting agenda item deleted successfully.",
+        )
+        return self._to_write_result("delete", outcome)
+
+    def _to_write_result(self, action: str, outcome: _WriteOutcome[MeetingAgendaItemSummary]) -> MeetingAgendaItemWriteResult:
+        return MeetingAgendaItemWriteResult(
+            action=action,
+            state=outcome.state,
+            ready=outcome.ready,
+            message=outcome.message,
+            payload=outcome.payload,
+            validation_errors=outcome.validation_errors,
+            result=outcome.detail,
+            **outcome.identity,
         )

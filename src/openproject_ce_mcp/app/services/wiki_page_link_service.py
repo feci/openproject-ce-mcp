@@ -43,6 +43,8 @@ Attachments' exact pattern:
 
 from __future__ import annotations
 
+from typing import Any
+
 from ...config import Settings
 from ...models import WikiPageLinkListResult, WikiPageLinkSummary, WikiPageLinkWriteResult
 from ..errors import NotFoundError
@@ -52,6 +54,7 @@ from ..ports.current_user import CurrentUserLookup
 from ..ports.wiki_page_link_api import WikiPageLinkApi, WikiPageLinkRecord
 from ..ports.work_package_ref import WorkPackageIdResolver
 from ..version_gate import call_version_gated
+from ._write_outcome import _finalize_write, _WriteOutcome
 
 
 class WikiPageLinkService:
@@ -140,41 +143,34 @@ class WikiPageLinkService:
         hidden_fields.ensure_field_writable("wiki_page_link", "identifier", settings=self._settings)
         hidden_fields.ensure_field_writable("wiki_page_link", "provider", settings=self._settings)
         payload = {"identifier": identifier, "provider": provider}
-        if not confirm:
-            return WikiPageLinkWriteResult(
-                action="create",
-                state="preview",
-                ready=True,
-                message=(
-                    "OpenProject is ready to create this wiki page link. Ask for confirmation, "
-                    "then call again with confirm=true."
-                ),
-                link_id=None,
-                work_package_id=resolved_id,
-                payload=payload,
-                validation_errors={},
-                result=None,
-            )
 
-        access.ensure_write_enabled("work_package", settings=self._settings)
-        current_user = await self._current_user()
-        record = await call_version_gated(
-            lambda: self._api.create(resolved_id, identifier=identifier, provider=provider, author_id=current_user.id),
-            feature="Wiki page links",
-            floor="17.6",
-        )
-        result = self._stamp(record)
-        return WikiPageLinkWriteResult(
-            action="create",
-            state="confirmed",
-            ready=True,
-            message="Wiki page link created successfully.",
-            link_id=result.id,
-            work_package_id=resolved_id,
+        async def _commit(p: dict[str, Any]) -> WikiPageLinkSummary:
+            current_user = await self._current_user()
+            record = await call_version_gated(
+                lambda: self._api.create(
+                    resolved_id, identifier=identifier, provider=provider, author_id=current_user.id
+                ),
+                feature="Wiki page links",
+                floor="17.6",
+            )
+            return self._stamp(record)
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=result,
+            identity={"link_id": None, "work_package_id": resolved_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("work_package", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"link_id": d.id, "work_package_id": resolved_id},
+            rejected_message="",
+            preview_message=(
+                "OpenProject is ready to create this wiki page link. Ask for confirmation, "
+                "then call again with confirm=true."
+            ),
+            success_message="Wiki page link created successfully.",
         )
+        return self._to_write_result("create", outcome)
 
     async def delete(
         self, work_package_id: int | str, link_id: int, *, confirm: bool = False
@@ -183,29 +179,32 @@ class WikiPageLinkService:
         resolved_id = await self._resolve_work_package_id(work_package_id, write=True)
         await self._ensure_link_belongs_to_work_package(resolved_id, link_id)
         payload = {"id": link_id}
-        if not confirm:
-            return WikiPageLinkWriteResult(
-                action="delete",
-                state="preview",
-                ready=True,
-                message="Ask for confirmation, then call again with confirm=true to delete it.",
-                link_id=link_id,
-                work_package_id=resolved_id,
-                payload=payload,
-                validation_errors={},
-                result=None,
-            )
 
-        access.ensure_write_enabled("work_package", settings=self._settings)
-        await call_version_gated(lambda: self._api.delete(link_id), feature="Wiki page links", floor="17.6")
-        return WikiPageLinkWriteResult(
-            action="delete",
-            state="confirmed",
-            ready=True,
-            message="Wiki page link deleted successfully.",
-            link_id=link_id,
-            work_package_id=resolved_id,
+        async def _commit(p: dict[str, Any]) -> None:
+            await call_version_gated(lambda: self._api.delete(link_id), feature="Wiki page links", floor="17.6")
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=None,
+            identity={"link_id": link_id, "work_package_id": resolved_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("work_package", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"link_id": link_id, "work_package_id": resolved_id},
+            rejected_message="",
+            preview_message="Ask for confirmation, then call again with confirm=true to delete it.",
+            success_message="Wiki page link deleted successfully.",
+        )
+        return self._to_write_result("delete", outcome)
+
+    def _to_write_result(self, action: str, outcome: _WriteOutcome[WikiPageLinkSummary | None]) -> WikiPageLinkWriteResult:
+        return WikiPageLinkWriteResult(
+            action=action,
+            state=outcome.state,
+            ready=outcome.ready,
+            message=outcome.message,
+            payload=outcome.payload,
+            validation_errors=outcome.validation_errors,
+            result=outcome.detail,
+            **outcome.identity,
         )

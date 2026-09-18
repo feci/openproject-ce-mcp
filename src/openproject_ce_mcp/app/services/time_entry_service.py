@@ -600,28 +600,30 @@ class TimeEntryService:
         )
         detail = self._stamp(self._api.to_record(current, text_limit=self._settings.text_limit).summary())
         payload = {"id": detail.id, "hours": detail.hours, "spentOn": detail.spent_on}
-        if not confirm:
-            return TimeEntryWriteResult(
-                action="delete",
-                state="preview",
-                ready=True,
-                message="OpenProject found the time entry. Ask for confirmation, then call again with confirm=true to delete it.",
-                time_entry_id=detail.id,
-                project=detail.project,
-                payload=payload,
-                validation_errors={},
-                result=detail,
-            )
-        access.ensure_write_enabled("work_package", settings=self._settings)
-        await self._api.delete(time_entry_id)
-        return TimeEntryWriteResult(
-            action="delete",
-            state="confirmed",
-            ready=True,
-            message="Time entry deleted successfully.",
-            time_entry_id=detail.id,
-            project=detail.project,
+
+        async def _commit(p: dict[str, Any]) -> None:
+            await self._api.delete(time_entry_id)
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=None,
+            identity={"time_entry_id": detail.id, "project": detail.project},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("work_package", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"time_entry_id": detail.id, "project": detail.project},
+            rejected_message="",
+            preview_message="OpenProject found the time entry. Ask for confirmation, then call again with confirm=true to delete it.",
+            success_message="Time entry deleted successfully.",
+            preview_detail=detail,
+        )
+        return TimeEntryWriteResult(
+            action="delete",
+            state=outcome.state,
+            ready=outcome.ready,
+            message=outcome.message,
+            payload=outcome.payload,
+            validation_errors=outcome.validation_errors,
+            result=outcome.detail,
+            **outcome.identity,
         )

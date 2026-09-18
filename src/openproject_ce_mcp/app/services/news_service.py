@@ -11,107 +11,28 @@ there is no dedicated OPENPROJECT_ENABLE_NEWS_* flag, so every
 access.ensure_read_enabled/ensure_write_enabled call here uses scope="project".
 
 Unlike MembershipService, News has no /form endpoint: create_news/update_news
-are hand-rolled POST/PATCH with no server-side validation round-trip, so the
-private _WriteOutcome/_preview/_committed/_to_write_result helpers below (a
-trimmed, News-local counterpart to membership_service.py's
-_finalize_write/_WriteOutcome) have no validation_errors branch -- kept
-separate rather than shared/generalized since that branch genuinely doesn't
-apply here, and each domain's write-state-machine helper is intentionally
-private/domain-local, unified only where the shapes genuinely match.
+are hand-rolled POST/PATCH with no server-side validation round-trip -- wired
+onto the shared `_write_outcome._finalize_write` with `validation_errors={}`
+throughout (OPM-2705), the same no-form shape Group/Storage already use; a
+previous News-local `_WriteOutcome`/`_preview`/`_committed`/`_to_write_result`
+duplicate has been removed now that the shared helper covers this shape too.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from ...config import Settings
-from ...models import NewsDetail, NewsListResult, NewsWriteResult, WriteResultState
+from ...models import NewsDetail, NewsListResult, NewsWriteResult
 from ..pagination import clamp_limit, scan_records_and_paginate
 from ..policies import access, hidden_fields
 from ..policies import scope as scope_policy
 from ..policies.news_policy import news_payload_allowed
 from ..ports.news_api import NewsApi
 from ..ports.project_ref import ProjectRefResolver
+from ._write_outcome import _finalize_write, _WriteOutcome
 from .project_scoped_list import SUBJECT_LIMIT, resolve_project_filter_candidates, summary_matches_project_candidates
 from .project_scoped_list import trim_text as _trim_text
-
-
-@dataclass(frozen=True)
-class _WriteOutcome:
-    action: str
-    state: WriteResultState
-    news_id: int | None
-    project: str | None
-    payload: dict[str, Any]
-    result: NewsDetail | None
-
-
-def _preview(*, action: str, news_id: int | None, project: str | None, payload: dict[str, Any]) -> _WriteOutcome:
-    return _WriteOutcome(
-        action=action,
-        state="preview",
-        news_id=news_id,
-        project=project,
-        payload=payload,
-        result=None,
-    )
-
-
-def _committed(*, action: str, payload: dict[str, Any], result: NewsDetail) -> _WriteOutcome:
-    return _WriteOutcome(
-        action=action,
-        state="confirmed",
-        news_id=result.id,
-        project=result.project,
-        payload=payload,
-        result=result,
-    )
-
-
-def _delete_outcome(*, state: WriteResultState, payload: dict[str, Any], detail: NewsDetail) -> _WriteOutcome:
-    """delete()'s preview AND commit both carry the SAME (already-fetched,
-    already-stamped) `detail` as `result` -- unlike create()/update(), whose
-    preview has no committed value yet."""
-    return _WriteOutcome(
-        action="delete",
-        state=state,
-        news_id=detail.id,
-        project=detail.project,
-        payload=payload,
-        result=detail,
-    )
-
-
-_MESSAGES: dict[str, tuple[str, str]] = {
-    "create": (
-        "OpenProject is ready to create this news entry. Ask for confirmation, then call again with confirm=true.",
-        "News created successfully.",
-    ),
-    "update": (
-        "OpenProject is ready to update this news entry. Ask for confirmation, then call again with confirm=true.",
-        "News updated successfully.",
-    ),
-    "delete": (
-        "OpenProject found the news entry. Ask for confirmation, then call again with confirm=true to delete it.",
-        "News deleted successfully.",
-    ),
-}
-
-
-def _to_write_result(outcome: _WriteOutcome) -> NewsWriteResult:
-    preview_message, success_message = _MESSAGES[outcome.action]
-    return NewsWriteResult(
-        action=outcome.action,
-        state=outcome.state,
-        ready=True,
-        message=success_message if outcome.state == "confirmed" else preview_message,
-        news_id=outcome.news_id,
-        project=outcome.project,
-        payload=outcome.payload,
-        validation_errors={},
-        result=outcome.result,
-    )
 
 
 class NewsService:
@@ -225,19 +146,22 @@ class NewsService:
             hidden_fields.ensure_field_writable("news", "description", settings=self._settings)
             payload["description"] = {"format": "markdown", "raw": description}
 
-        if not confirm:
-            return _to_write_result(
-                _preview(
-                    action="create",
-                    news_id=None,
-                    project=_trim_text(project_payload.get("name"), limit=SUBJECT_LIMIT),
-                    payload=payload,
-                )
-            )
+        async def _commit(p: dict[str, Any]) -> NewsDetail:
+            return self._stamp(await self._api.commit_create(p))  # type: ignore[no-any-return]
 
-        access.ensure_write_enabled("project", settings=self._settings)
-        result = self._stamp(await self._api.commit_create(payload))
-        return _to_write_result(_committed(action="create", payload=payload, result=result))
+        outcome = await _finalize_write(
+            confirm=confirm,
+            payload=payload,
+            validation_errors={},
+            identity={"news_id": None, "project": _trim_text(project_payload.get("name"), limit=SUBJECT_LIMIT)},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("project", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"news_id": d.id, "project": d.project},
+            rejected_message="",
+            preview_message="OpenProject is ready to create this news entry. Ask for confirmation, then call again with confirm=true.",
+            success_message="News created successfully.",
+        )
+        return self._to_write_result("create", outcome)
 
     async def update(
         self,
@@ -264,14 +188,22 @@ class NewsService:
             hidden_fields.ensure_field_writable("news", "description", settings=self._settings)
             payload["description"] = {"format": "markdown", "raw": description}
 
-        if not confirm:
-            return _to_write_result(
-                _preview(action="update", news_id=detail.id, project=detail.project, payload=payload)
-            )
+        async def _commit(p: dict[str, Any]) -> NewsDetail:
+            return self._stamp(await self._api.commit_update(news_id, p))  # type: ignore[no-any-return]
 
-        access.ensure_write_enabled("project", settings=self._settings)
-        result = self._stamp(await self._api.commit_update(news_id, payload))
-        return _to_write_result(_committed(action="update", payload=payload, result=result))
+        outcome = await _finalize_write(
+            confirm=confirm,
+            payload=payload,
+            validation_errors={},
+            identity={"news_id": detail.id, "project": detail.project},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("project", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"news_id": d.id, "project": d.project},
+            rejected_message="",
+            preview_message="OpenProject is ready to update this news entry. Ask for confirmation, then call again with confirm=true.",
+            success_message="News updated successfully.",
+        )
+        return self._to_write_result("update", outcome)
 
     async def delete(self, *, news_id: int, confirm: bool = False) -> NewsWriteResult:
         current = await self._api.get(news_id)
@@ -281,9 +213,33 @@ class NewsService:
         detail = self._stamp(current.to_detail())
         payload = {"id": detail.id, "title": detail.title}
 
-        if not confirm:
-            return _to_write_result(_delete_outcome(state="preview", payload=payload, detail=detail))
+        async def _commit(p: dict[str, Any]) -> NewsDetail:
+            await self._api.delete(news_id)
+            return detail
 
-        access.ensure_write_enabled("project", settings=self._settings)
-        await self._api.delete(news_id)
-        return _to_write_result(_delete_outcome(state="confirmed", payload=payload, detail=detail))
+        outcome = await _finalize_write(
+            confirm=confirm,
+            payload=payload,
+            validation_errors={},
+            identity={"news_id": detail.id, "project": detail.project},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("project", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"news_id": d.id, "project": d.project},
+            rejected_message="",
+            preview_message="OpenProject found the news entry. Ask for confirmation, then call again with confirm=true to delete it.",
+            success_message="News deleted successfully.",
+            preview_detail=detail,
+        )
+        return self._to_write_result("delete", outcome)
+
+    def _to_write_result(self, action: str, outcome: _WriteOutcome[NewsDetail | None]) -> NewsWriteResult:
+        return NewsWriteResult(
+            action=action,
+            state=outcome.state,
+            ready=outcome.ready,
+            message=outcome.message,
+            payload=outcome.payload,
+            validation_errors=outcome.validation_errors,
+            result=outcome.detail,
+            **outcome.identity,
+        )

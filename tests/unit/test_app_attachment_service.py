@@ -458,6 +458,39 @@ async def test_create_rejects_a_file_that_grows_between_the_stat_and_the_read(tm
     assert api.create_calls == []
 
 
+@pytest.mark.asyncio
+async def test_create_confirmed_payload_reflects_file_size_actually_uploaded(tmp_path) -> None:
+    """A file that grows between the preview-time stat and the confirm-time
+    re-read (but stays under the size limit either way) must be uploaded
+    with, AND report back, its real post-growth size/name -- not the
+    stale pre-commit stat (OPM-2705 fix: the confirmed response used to
+    echo the first, now-outdated `payload` unconditionally)."""
+    report = tmp_path / "report.pdf"
+    report.write_bytes(b"x" * 5)
+    api = _FakeAttachmentApi(max_attachment_size=100)
+    settings = dataclasses.replace(make_settings(), enable_work_package_write=True, attachment_root=str(tmp_path))
+    service = _service(api=api, settings=settings)
+
+    original_validate = service._validate_attachment_size
+    calls = {"count": 0}
+
+    async def grow_then_validate(file_size_bytes: int) -> None:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            await original_validate(file_size_bytes)
+            report.write_bytes(b"x" * 20)
+        else:
+            await original_validate(file_size_bytes)
+
+    service._validate_attachment_size = grow_then_validate  # type: ignore[method-assign]
+
+    result = await service.create(work_package_id=9, file_path=str(report), confirm=True)
+
+    assert result.state == "confirmed"
+    assert result.payload["fileSize"] == 20
+    assert api.create_calls[0][3] == b"x" * 20
+
+
 # --- delete -----------------------------------------------------------------
 
 

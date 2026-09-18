@@ -31,7 +31,9 @@ though `update()` has a prior GET (for the member diff) it could otherwise
 gate on the way `NewsService.update()` gates on its own prior GET. This means
 a caller without `OPENPROJECT_ENABLE_ADMIN_WRITE` is rejected immediately on
 `update()`, even for a pure preview, and can never see a member-diff preview
--- deliberate, not News' more-permissive-preview pattern.
+-- deliberate, not News' more-permissive-preview pattern. Wired via
+`_finalize_write`'s `gate_before_preview=True` (OPM-2705), same as Storage and
+User.delete().
 
 `create()`/`update()` call `hidden_fields.ensure_field_writable("group",
 <field>, ...)` for every field they write ("name", "members"), matching
@@ -43,12 +45,13 @@ from __future__ import annotations
 from typing import Any
 
 from ...config import Settings
-from ...models import GroupDetail, GroupListResult, GroupSummary, GroupWriteResult, WriteResultState
+from ...models import GroupDetail, GroupListResult, GroupSummary, GroupWriteResult
 from ..api_href import api_href as _api_href
 from ..pagination import effective_limit as _effective_limit
 from ..pagination import paginate_server, scan_records_and_paginate
 from ..policies import access, hidden_fields
 from ..ports.group_api import GroupApi
+from ._write_outcome import _finalize_write, _WriteOutcome
 
 
 class GroupService:
@@ -116,9 +119,6 @@ class GroupService:
         return self._stamp(record.to_detail())
 
     async def create(self, *, name: str, user_ids: list[int] | None = None, confirm: bool = False) -> GroupWriteResult:
-        # Checked unconditionally -- there is no prior GET to gate an
-        # unauthorized preview request on.
-        access.ensure_write_enabled("admin", settings=self._settings)
         hidden_fields.ensure_field_writable("group", "name", settings=self._settings)
         body: dict[str, Any] = {"name": name}
         if user_ids:
@@ -128,28 +128,23 @@ class GroupService:
             }
         payload_preview: dict[str, Any] = {"name": name, "user_ids": user_ids or []}
 
-        if not confirm:
-            return self._write_result(
-                action="create",
-                state="preview",
-                ready=True,
-                message="OpenProject is ready to create the group. Ask for confirmation, then call again with confirm=true.",
-                group_id=None,
-                payload=payload_preview,
-                validation_errors={},
-                result=None,
-            )
-        result = self._stamp(await self._api.commit_create(body))
-        return self._write_result(
-            action="create",
-            state="confirmed",
-            ready=True,
-            message="Group created successfully.",
-            group_id=result.id,
+        async def _commit(p: dict[str, Any]) -> GroupSummary:
+            return self._stamp(await self._api.commit_create(body))  # type: ignore[no-any-return]
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload_preview,
             validation_errors={},
-            result=result,
+            identity={"group_id": None},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("admin", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"group_id": d.id},
+            rejected_message="",
+            preview_message="OpenProject is ready to create the group. Ask for confirmation, then call again with confirm=true.",
+            success_message="Group created successfully.",
+            gate_before_preview=True,
         )
+        return self._to_write_result("create", outcome)
 
     async def update(
         self,
@@ -162,7 +157,10 @@ class GroupService:
     ) -> GroupWriteResult:
         # Checked unconditionally, even though a prior GET already happens
         # below for the member diff. See this module's docstring for the
-        # resulting preview-visibility tradeoff.
+        # resulting preview-visibility tradeoff. Must fire before that GET,
+        # so this is an explicit pre-check -- `_finalize_write`'s own
+        # `gate_before_preview` re-check below is then a harmless no-I/O
+        # redundant check (ensure_write_enabled is a pure settings read).
         access.ensure_write_enabled("admin", settings=self._settings)
         body: dict[str, Any] = {}
         if name is not None:
@@ -192,78 +190,55 @@ class GroupService:
         if remove_user_ids:
             payload_preview["remove_user_ids"] = remove_user_ids
 
-        if not confirm:
-            return self._write_result(
-                action="update",
-                state="preview",
-                ready=True,
-                message="OpenProject is ready to update the group. Ask for confirmation, then call again with confirm=true.",
-                group_id=group_id,
-                payload=payload_preview,
-                validation_errors={},
-                result=None,
-            )
-        result = self._stamp(await self._api.commit_update(group_id, body))
-        return self._write_result(
-            action="update",
-            state="confirmed",
-            ready=True,
-            message="Group updated successfully.",
-            group_id=result.id,
+        async def _commit(p: dict[str, Any]) -> GroupSummary:
+            return self._stamp(await self._api.commit_update(group_id, body))  # type: ignore[no-any-return]
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload_preview,
             validation_errors={},
-            result=result,
+            identity={"group_id": group_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("admin", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"group_id": d.id},
+            rejected_message="",
+            preview_message="OpenProject is ready to update the group. Ask for confirmation, then call again with confirm=true.",
+            success_message="Group updated successfully.",
+            gate_before_preview=True,
         )
+        return self._to_write_result("update", outcome)
 
     async def delete(self, group_id: int, *, confirm: bool = False) -> GroupWriteResult:
-        # Checked unconditionally -- no prior GET to gate an unauthorized
-        # preview request on. No detail fetched on either branch (matches
-        # _finalize_delete's preview_result=None/commit_result=None call
-        # shape).
-        access.ensure_write_enabled("admin", settings=self._settings)
+        # No detail fetched on either branch -- delete's commit callable
+        # returns None, matching the pre-existing result=None shape.
         payload = {"id": group_id}
-        if not confirm:
-            return self._write_result(
-                action="delete",
-                state="preview",
-                ready=True,
-                message="OpenProject is ready to delete the group. Ask for confirmation, then call again with confirm=true.",
-                group_id=group_id,
-                payload=payload,
-                validation_errors={},
-                result=None,
-            )
-        await self._api.commit_delete(group_id)
-        return self._write_result(
-            action="delete",
-            state="confirmed",
-            ready=True,
-            message="Group deleted successfully.",
-            group_id=group_id,
+
+        async def _commit(p: dict[str, Any]) -> None:
+            await self._api.commit_delete(group_id)
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=None,
+            identity={"group_id": group_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("admin", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"group_id": group_id},
+            rejected_message="",
+            preview_message="OpenProject is ready to delete the group. Ask for confirmation, then call again with confirm=true.",
+            success_message="Group deleted successfully.",
+            gate_before_preview=True,
         )
+        return self._to_write_result("delete", outcome)
 
-    def _write_result(
-        self,
-        *,
-        action: str,
-        state: WriteResultState,
-        ready: bool,
-        message: str,
-        group_id: int | None,
-        payload: dict[str, Any],
-        validation_errors: dict[str, str],
-        result: GroupSummary | None,
-    ) -> GroupWriteResult:
+    def _to_write_result(self, action: str, outcome: _WriteOutcome[GroupSummary | None]) -> GroupWriteResult:
         return GroupWriteResult(
             action=action,
-            state=state,
-            ready=ready,
-            message=message,
-            group_id=group_id,
-            payload=payload,
-            validation_errors=validation_errors,
-            result=result,
+            state=outcome.state,
+            ready=outcome.ready,
+            message=outcome.message,
+            payload=outcome.payload,
+            validation_errors=outcome.validation_errors,
+            result=outcome.detail,
+            **outcome.identity,
         )

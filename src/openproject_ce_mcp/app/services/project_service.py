@@ -309,31 +309,31 @@ class ProjectService:
         project = self._stamp(record.summary)
         payload = {"id": project.id, "identifier": project.identifier, "name": project.name}
 
-        if not confirm:
-            return ProjectWriteResult(
-                action="delete",
-                state="preview",
-                ready=True,
-                message="OpenProject found the project. Ask for confirmation, then call again with confirm=true to delete it.",
-                project_id=project.id,
-                project=project.name,
-                payload=payload,
-                validation_errors={},
-                result=None,
-            )
+        async def _commit(p: dict[str, Any]) -> ProjectSummary:
+            await self._api.delete(project.id)
+            return project
 
-        access.ensure_write_enabled("project", settings=self._settings)
-        await self._api.delete(project.id)
-        return ProjectWriteResult(
-            action="delete",
-            state="confirmed",
-            ready=True,
-            message="Project deleted successfully.",
-            project_id=project.id,
-            project=project.name,
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=project,
+            identity={"project_id": project.id, "project": project.name},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("project", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"project_id": d.id, "project": d.name},
+            rejected_message="",
+            preview_message="OpenProject found the project. Ask for confirmation, then call again with confirm=true to delete it.",
+            success_message="Project deleted successfully.",
+        )
+        return ProjectWriteResult(
+            action="delete",
+            state=outcome.state,
+            ready=outcome.ready,
+            message=outcome.message,
+            payload=outcome.payload,
+            validation_errors=outcome.validation_errors,
+            result=outcome.detail,
+            **outcome.identity,
         )
 
     async def copy(

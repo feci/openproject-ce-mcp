@@ -54,7 +54,7 @@ scope).
 from __future__ import annotations
 
 import mimetypes
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -75,6 +75,7 @@ from ..policies.scope import id_from_href
 from ..ports.attachment_api import AttachmentApi, AttachmentContent
 from ..ports.work_package_lookup_api import WorkPackageLookupApi
 from ..ports.work_package_ref import WorkPackageIdResolver
+from ._write_outcome import _finalize_write, _WriteOutcome
 
 # Files that must never be uploaded even from inside the attachment root: the
 # config often lives in the server's working directory, so directory
@@ -513,57 +514,61 @@ class AttachmentService:
         # only read after the size check passes.
         file_info = self._prepare_attachment_file(file_path, include_bytes=False)
         await self._validate_attachment_size(file_info.file_size_bytes)
-        if not confirm:
-            return AttachmentWriteResult(
-                action="create",
-                state="preview",
-                ready=True,
-                message="OpenProject is ready to upload this attachment. Ask for confirmation, then call again with confirm=true.",
-                attachment_id=None,
-                work_package_id=resolved_id,
-                payload={
-                    "fileName": file_info.file_name,
-                    "fileSize": file_info.file_size_bytes,
-                    "description": description,
-                },
-                validation_errors={},
-                result=None,
-            )
+        payload = {
+            "fileName": file_info.file_name,
+            "fileSize": file_info.file_size_bytes,
+            "description": description,
+        }
+        # Populated by _commit with the re-stat'd values actually uploaded,
+        # so the confirmed response reports reality rather than the earlier
+        # preview-time stat if the file changed size in between (see
+        # _commit's own TOCTOU comment).
+        committed_payload: dict[str, Any] = {}
 
-        access.ensure_write_enabled("work_package", settings=self._settings)
-        file_info = self._prepare_attachment_file(file_path, include_bytes=True)
-        assert file_info.file_bytes is not None
-        # Re-validate against the bytes actually read, not just the earlier
-        # stat: the file on disk could have grown between the size check
-        # above and this second read (a TOCTOU window, however small) --
-        # closes it rather than trusting the stale stat.
-        await self._validate_attachment_size(len(file_info.file_bytes))
-        record = await self._api.create(
-            resolved_id,
-            metadata={
-                "fileName": file_info.file_name,
-                **({"description": {"format": "markdown", "raw": description}} if description is not None else {}),
-            },
-            file_name=file_info.file_name,
-            file_bytes=file_info.file_bytes,
-            content_type=file_info.content_type,
-        )
-        result = self._stamp(record.summary)
-        return AttachmentWriteResult(
-            action="create",
-            state="confirmed",
-            ready=True,
-            message="Attachment uploaded successfully.",
-            attachment_id=result.id,
-            work_package_id=resolved_id,
-            payload={
-                "fileName": file_info.file_name,
-                "fileSize": file_info.file_size_bytes,
-                "description": description,
-            },
+        async def _commit(p: dict[str, Any]) -> AttachmentSummary:
+            # Re-fetch with bytes and re-validate against what was actually
+            # read, not just the earlier stat: the file on disk could have
+            # grown between the size check above and this second read (a
+            # TOCTOU window, however small) -- closes it rather than trusting
+            # the stale stat. Must happen here (at actual commit time), not
+            # before _finalize_write's confirm check.
+            confirmed_file_info = self._prepare_attachment_file(file_path, include_bytes=True)
+            assert confirmed_file_info.file_bytes is not None
+            await self._validate_attachment_size(len(confirmed_file_info.file_bytes))
+            committed_payload["fileName"] = confirmed_file_info.file_name
+            committed_payload["fileSize"] = len(confirmed_file_info.file_bytes)
+            committed_payload["description"] = description
+            record = await self._api.create(
+                resolved_id,
+                metadata={
+                    "fileName": confirmed_file_info.file_name,
+                    **(
+                        {"description": {"format": "markdown", "raw": description}}
+                        if description is not None
+                        else {}
+                    ),
+                },
+                file_name=confirmed_file_info.file_name,
+                file_bytes=confirmed_file_info.file_bytes,
+                content_type=confirmed_file_info.content_type,
+            )
+            return self._stamp(record.summary)
+
+        outcome = await _finalize_write(
+            confirm=confirm,
+            payload=payload,
             validation_errors={},
-            result=result,
+            identity={"attachment_id": None, "work_package_id": resolved_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("work_package", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"attachment_id": d.id, "work_package_id": resolved_id},
+            rejected_message="",
+            preview_message="OpenProject is ready to upload this attachment. Ask for confirmation, then call again with confirm=true.",
+            success_message="Attachment uploaded successfully.",
         )
+        if committed_payload:
+            outcome = replace(outcome, payload=committed_payload)
+        return self._to_write_result("create", outcome)
 
     async def delete(self, attachment_id: int, *, confirm: bool = False) -> AttachmentWriteResult:
         access.ensure_read_enabled("work_package", settings=self._settings)
@@ -576,31 +581,35 @@ class AttachmentService:
             "fileName": attachment.file_name,
             "fileSize": attachment.file_size_bytes,
         }
-        if not confirm:
-            return AttachmentWriteResult(
-                action="delete",
-                state="preview",
-                ready=True,
-                message="OpenProject found the attachment. Ask for confirmation, then call again with confirm=true to delete it.",
-                attachment_id=attachment.id,
-                work_package_id=work_package_id,
-                payload=preview_payload,
-                validation_errors={},
-                result=attachment,
-            )
 
-        access.ensure_write_enabled("work_package", settings=self._settings)
-        await self._api.delete(attachment_id)
-        return AttachmentWriteResult(
-            action="delete",
-            state="confirmed",
-            ready=True,
-            message="Attachment deleted successfully.",
-            attachment_id=attachment.id,
-            work_package_id=work_package_id,
+        async def _commit(p: dict[str, Any]) -> None:
+            await self._api.delete(attachment_id)
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=preview_payload,
             validation_errors={},
-            result=None,
+            identity={"attachment_id": attachment.id, "work_package_id": work_package_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("work_package", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"attachment_id": attachment.id, "work_package_id": work_package_id},
+            rejected_message="",
+            preview_message="OpenProject found the attachment. Ask for confirmation, then call again with confirm=true to delete it.",
+            success_message="Attachment deleted successfully.",
+            preview_detail=attachment,
+        )
+        return self._to_write_result("delete", outcome)
+
+    def _to_write_result(self, action: str, outcome: _WriteOutcome[AttachmentSummary | None]) -> AttachmentWriteResult:
+        return AttachmentWriteResult(
+            action=action,
+            state=outcome.state,
+            ready=outcome.ready,
+            message=outcome.message,
+            payload=outcome.payload,
+            validation_errors=outcome.validation_errors,
+            result=outcome.detail,
+            **outcome.identity,
         )
 
     async def _ensure_container_allowed(self, container_link: dict[str, Any] | None, *, write: bool) -> int | None:

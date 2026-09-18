@@ -34,6 +34,7 @@ from ..policies import scope as scope_policy
 from ..ports.meeting_api import MeetingApi
 from ..ports.meeting_section_api import MeetingSectionApi
 from ..version_gate import call_version_gated
+from ._write_outcome import _finalize_write, _WriteOutcome
 
 
 class MeetingSectionService:
@@ -130,36 +131,26 @@ class MeetingSectionService:
         links["meeting"] = {"href": _api_href(f"meetings/{meeting_id}", api_prefix=self._api_prefix)}
         payload["_links"] = links
 
-        if not confirm:
-            return MeetingSectionWriteResult(
-                action="create",
-                state="preview",
-                ready=True,
-                message=(
-                    "OpenProject is ready to create this meeting section. Ask for confirmation, "
-                    "then call again with confirm=true."
-                ),
-                section_id=None,
-                meeting_id=meeting_id,
-                payload=payload,
-                validation_errors={},
-                result=None,
-            )
+        async def _commit(p: dict[str, Any]) -> MeetingSectionSummary:
+            record = await call_version_gated(lambda: self._api.create(p), feature="Meeting sections", floor="17.6")
+            return self._stamp(record.summary)
 
-        access.ensure_write_enabled("meeting", settings=self._settings)
-        record = await call_version_gated(lambda: self._api.create(payload), feature="Meeting sections", floor="17.6")
-        result = self._stamp(record.summary)
-        return MeetingSectionWriteResult(
-            action="create",
-            state="confirmed",
-            ready=True,
-            message="Meeting section created successfully.",
-            section_id=result.id,
-            meeting_id=result.meeting_id,
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=result,
+            identity={"section_id": None, "meeting_id": meeting_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("meeting", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"section_id": d.id, "meeting_id": d.meeting_id},
+            rejected_message="",
+            preview_message=(
+                "OpenProject is ready to create this meeting section. Ask for confirmation, "
+                "then call again with confirm=true."
+            ),
+            success_message="Meeting section created successfully.",
         )
+        return self._to_write_result("create", outcome)
 
     async def update(
         self,
@@ -188,35 +179,25 @@ class MeetingSectionService:
             hidden_fields.ensure_field_writable("meeting_section", "position", settings=self._settings)
             payload["position"] = position
 
-        if not confirm:
-            return MeetingSectionWriteResult(
-                action="update",
-                state="preview",
-                ready=True,
-                message="Ask for confirmation, then call again with confirm=true to update it.",
-                section_id=section_id,
-                meeting_id=meeting_id,
-                payload=payload,
-                validation_errors={},
-                result=None,
+        async def _commit(p: dict[str, Any]) -> MeetingSectionSummary:
+            record = await call_version_gated(
+                lambda: self._api.update(section_id, p), feature="Meeting sections", floor="17.6"
             )
+            return self._stamp(record.summary)
 
-        access.ensure_write_enabled("meeting", settings=self._settings)
-        record = await call_version_gated(
-            lambda: self._api.update(section_id, payload), feature="Meeting sections", floor="17.6"
-        )
-        result = self._stamp(record.summary)
-        return MeetingSectionWriteResult(
-            action="update",
-            state="confirmed",
-            ready=True,
-            message="Meeting section updated successfully.",
-            section_id=result.id,
-            meeting_id=result.meeting_id,
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=result,
+            identity={"section_id": section_id, "meeting_id": meeting_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("meeting", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"section_id": d.id, "meeting_id": d.meeting_id},
+            rejected_message="",
+            preview_message="Ask for confirmation, then call again with confirm=true to update it.",
+            success_message="Meeting section updated successfully.",
         )
+        return self._to_write_result("update", outcome)
 
     async def delete(self, *, section_id: int, confirm: bool = False) -> MeetingSectionWriteResult:
         current = await call_version_gated(lambda: self._api.get(section_id), feature="Meeting sections", floor="17.6")
@@ -229,29 +210,32 @@ class MeetingSectionService:
         section = self._stamp(current.summary)
         payload = {"id": section.id, "title": section.title}
 
-        if not confirm:
-            return MeetingSectionWriteResult(
-                action="delete",
-                state="preview",
-                ready=True,
-                message="OpenProject found the section. Ask for confirmation, then call again with confirm=true to delete it.",
-                section_id=section.id,
-                meeting_id=section.meeting_id,
-                payload=payload,
-                validation_errors={},
-                result=None,
-            )
+        async def _commit(p: dict[str, Any]) -> MeetingSectionSummary:
+            await call_version_gated(lambda: self._api.delete(section_id), feature="Meeting sections", floor="17.6")
+            return section
 
-        access.ensure_write_enabled("meeting", settings=self._settings)
-        await call_version_gated(lambda: self._api.delete(section_id), feature="Meeting sections", floor="17.6")
-        return MeetingSectionWriteResult(
-            action="delete",
-            state="confirmed",
-            ready=True,
-            message="Meeting section deleted successfully.",
-            section_id=section.id,
-            meeting_id=section.meeting_id,
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=section,
+            identity={"section_id": section.id, "meeting_id": section.meeting_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("meeting", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"section_id": d.id, "meeting_id": d.meeting_id},
+            rejected_message="",
+            preview_message="OpenProject found the section. Ask for confirmation, then call again with confirm=true to delete it.",
+            success_message="Meeting section deleted successfully.",
+        )
+        return self._to_write_result("delete", outcome)
+
+    def _to_write_result(self, action: str, outcome: _WriteOutcome[MeetingSectionSummary]) -> MeetingSectionWriteResult:
+        return MeetingSectionWriteResult(
+            action=action,
+            state=outcome.state,
+            ready=outcome.ready,
+            message=outcome.message,
+            payload=outcome.payload,
+            validation_errors=outcome.validation_errors,
+            result=outcome.detail,
+            **outcome.identity,
         )

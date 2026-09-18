@@ -36,6 +36,8 @@ of an existing weekly schedule instead of leaving it untouched.
 
 from __future__ import annotations
 
+from typing import Any
+
 from ...config import Settings
 from ...models import UserWorkingHoursListResult, UserWorkingHoursSummary, UserWorkingHoursWriteResult
 from ..pagination import effective_limit as _effective_limit
@@ -43,6 +45,7 @@ from ..pagination import paginate_client
 from ..policies import access, hidden_fields
 from ..ports.user_working_hours_api import UserWorkingHoursApi, UserWorkingHoursRecord
 from ..version_gate import call_version_gated
+from ._write_outcome import _finalize_write, _WriteOutcome
 
 _WRITABLE_FIELDS: tuple[tuple[str, str], ...] = (
     ("valid_from", "validFrom"),
@@ -145,50 +148,41 @@ class UserWorkingHoursService:
             if value is not None:
                 hidden_fields.ensure_field_writable("user_working_hours", field_name, settings=self._settings)
                 payload[wire_key] = value
-        if not confirm:
-            return UserWorkingHoursWriteResult(
-                action="create",
-                state="preview",
-                ready=True,
-                message=(
-                    "OpenProject is ready to create this working-hours schedule. Ask for confirmation, "
-                    "then call again with confirm=true."
+        async def _commit(p: dict[str, Any]) -> UserWorkingHoursSummary:
+            record = await call_version_gated(
+                lambda: self._api.create(
+                    user_ref,
+                    valid_from=valid_from,
+                    monday_hours=monday_hours,
+                    tuesday_hours=tuesday_hours,
+                    wednesday_hours=wednesday_hours,
+                    thursday_hours=thursday_hours,
+                    friday_hours=friday_hours,
+                    saturday_hours=saturday_hours,
+                    sunday_hours=sunday_hours,
+                    availability_factor=availability_factor,
                 ),
-                working_hours_id=None,
-                user_id=None,
-                payload=payload,
-                validation_errors={},
-                result=None,
+                feature="User working hours",
+                floor="17.3",
             )
-        access.ensure_write_enabled("user_schedule", settings=self._settings)
-        record = await call_version_gated(
-            lambda: self._api.create(
-                user_ref,
-                valid_from=valid_from,
-                monday_hours=monday_hours,
-                tuesday_hours=tuesday_hours,
-                wednesday_hours=wednesday_hours,
-                thursday_hours=thursday_hours,
-                friday_hours=friday_hours,
-                saturday_hours=saturday_hours,
-                sunday_hours=sunday_hours,
-                availability_factor=availability_factor,
-            ),
-            feature="User working hours",
-            floor="17.3",
-        )
-        result = self._stamp(record)
-        return UserWorkingHoursWriteResult(
-            action="create",
-            state="confirmed",
-            ready=True,
-            message="Working-hours schedule created successfully.",
-            working_hours_id=result.id,
-            user_id=result.user_id,
+            return self._stamp(record)
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=result,
+            identity={"working_hours_id": None, "user_id": None},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("user_schedule", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"working_hours_id": d.id, "user_id": d.user_id},
+            rejected_message="",
+            preview_message=(
+                "OpenProject is ready to create this working-hours schedule. Ask for confirmation, "
+                "then call again with confirm=true."
+            ),
+            success_message="Working-hours schedule created successfully.",
         )
+        return self._to_write_result("create", outcome)
 
     async def update(
         self,
@@ -227,36 +221,27 @@ class UserWorkingHoursService:
             if value is not None:
                 hidden_fields.ensure_field_writable("user_working_hours", field_name, settings=self._settings)
                 payload[wire_key] = value
-        if not confirm:
-            return UserWorkingHoursWriteResult(
-                action="update",
-                state="preview",
-                ready=True,
-                message="Ask for confirmation, then call again with confirm=true to write it.",
-                working_hours_id=working_hours_id,
-                user_id=current.summary.user_id,
-                payload=payload,
-                validation_errors={},
-                result=None,
+        async def _commit(p: dict[str, Any]) -> UserWorkingHoursSummary:
+            record = await call_version_gated(
+                lambda: self._api.update(user_ref, working_hours_id, payload=p),
+                feature="User working hours",
+                floor="17.3",
             )
-        access.ensure_write_enabled("user_schedule", settings=self._settings)
-        record = await call_version_gated(
-            lambda: self._api.update(user_ref, working_hours_id, payload=payload),
-            feature="User working hours",
-            floor="17.3",
-        )
-        result = self._stamp(record)
-        return UserWorkingHoursWriteResult(
-            action="update",
-            state="confirmed",
-            ready=True,
-            message="Working-hours schedule updated successfully.",
-            working_hours_id=result.id,
-            user_id=result.user_id,
+            return self._stamp(record)
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=result,
+            identity={"working_hours_id": working_hours_id, "user_id": current.summary.user_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("user_schedule", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"working_hours_id": d.id, "user_id": d.user_id},
+            rejected_message="",
+            preview_message="Ask for confirmation, then call again with confirm=true to write it.",
+            success_message="Working-hours schedule updated successfully.",
         )
+        return self._to_write_result("update", outcome)
 
     async def delete(
         self, user_ref: str, working_hours_id: int, *, confirm: bool = False
@@ -266,30 +251,34 @@ class UserWorkingHoursService:
             lambda: self._api.get(user_ref, working_hours_id), feature="User working hours", floor="17.3"
         )
         payload = {"id": working_hours_id}
-        if not confirm:
-            return UserWorkingHoursWriteResult(
-                action="delete",
-                state="preview",
-                ready=True,
-                message="Ask for confirmation, then call again with confirm=true to delete it.",
-                working_hours_id=working_hours_id,
-                user_id=current.summary.user_id,
-                payload=payload,
-                validation_errors={},
-                result=None,
+
+        async def _commit(p: dict[str, Any]) -> None:
+            await call_version_gated(
+                lambda: self._api.delete(user_ref, working_hours_id), feature="User working hours", floor="17.3"
             )
-        access.ensure_write_enabled("user_schedule", settings=self._settings)
-        await call_version_gated(
-            lambda: self._api.delete(user_ref, working_hours_id), feature="User working hours", floor="17.3"
-        )
-        return UserWorkingHoursWriteResult(
-            action="delete",
-            state="confirmed",
-            ready=True,
-            message="Working-hours schedule deleted successfully.",
-            working_hours_id=working_hours_id,
-            user_id=current.summary.user_id,
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=None,
+            identity={"working_hours_id": working_hours_id, "user_id": current.summary.user_id},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("user_schedule", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"working_hours_id": working_hours_id, "user_id": current.summary.user_id},
+            rejected_message="",
+            preview_message="Ask for confirmation, then call again with confirm=true to delete it.",
+            success_message="Working-hours schedule deleted successfully.",
+        )
+        return self._to_write_result("delete", outcome)
+
+    def _to_write_result(self, action: str, outcome: _WriteOutcome[UserWorkingHoursSummary | None]) -> UserWorkingHoursWriteResult:
+        return UserWorkingHoursWriteResult(
+            action=action,
+            state=outcome.state,
+            ready=outcome.ready,
+            message=outcome.message,
+            payload=outcome.payload,
+            validation_errors=outcome.validation_errors,
+            result=outcome.detail,
+            **outcome.identity,
         )

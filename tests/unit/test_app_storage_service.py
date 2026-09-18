@@ -418,6 +418,20 @@ async def test_update_confirm_denied_without_admin_write_enabled() -> None:
 
 
 @pytest.mark.asyncio
+async def test_update_preview_also_denied_without_admin_write_enabled() -> None:
+    # Same unconditional-check tradeoff as create(): even a pure preview
+    # (confirm=False) is rejected before the current-state GET runs.
+    api = _FakeStorageApi()
+    service = _service(api)
+
+    with pytest.raises(PermissionDeniedError):
+        await service.update(storage_id=3, name="Renamed", confirm=False)
+
+    assert api.get_calls == []
+    assert api.commit_update_calls == []
+
+
+@pytest.mark.asyncio
 async def test_update_rejects_when_host_field_is_hidden() -> None:
     settings = dataclasses.replace(_admin_write_settings(), hidden_fields={"storage": ("host",)})
     api = _FakeStorageApi()
@@ -440,6 +454,20 @@ async def test_delete_denies_without_admin_write_and_never_calls_commit() -> Non
     with pytest.raises(PermissionDeniedError):
         await service.delete(3, confirm=True)
 
+    assert api.commit_delete_calls == []
+
+
+@pytest.mark.asyncio
+async def test_delete_preview_also_denied_without_admin_write_enabled() -> None:
+    # Same unconditional-check tradeoff as create()/update(): even a pure
+    # preview (confirm=False) is rejected before the current-state GET runs.
+    api = _FakeStorageApi()
+    service = _service(api)
+
+    with pytest.raises(PermissionDeniedError):
+        await service.delete(3, confirm=False)
+
+    assert api.get_calls == []
     assert api.commit_delete_calls == []
 
 

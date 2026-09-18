@@ -44,6 +44,8 @@ cannot know it without the round trip this design deliberately avoids.
 
 from __future__ import annotations
 
+from typing import Any
+
 from ...config import Settings
 from ...models import UserNonWorkingTimeListResult, UserNonWorkingTimeSummary, UserNonWorkingTimeWriteResult
 from ..pagination import effective_limit as _effective_limit
@@ -51,6 +53,7 @@ from ..pagination import paginate_client
 from ..policies import access, hidden_fields
 from ..ports.user_non_working_time_api import UserNonWorkingTimeApi, UserNonWorkingTimeRecord
 from ..version_gate import call_version_gated
+from ._write_outcome import _finalize_write, _WriteOutcome
 
 
 class UserNonWorkingTimeService:
@@ -95,39 +98,31 @@ class UserNonWorkingTimeService:
         hidden_fields.ensure_field_writable("user_non_working_time", "start_date", settings=self._settings)
         hidden_fields.ensure_field_writable("user_non_working_time", "end_date", settings=self._settings)
         payload = {"startDate": start_date, "endDate": end_date}
-        if not confirm:
-            return UserNonWorkingTimeWriteResult(
-                action="create",
-                state="preview",
-                ready=True,
-                message=(
-                    "OpenProject is ready to create this non-working time. Ask for confirmation, "
-                    "then call again with confirm=true."
-                ),
-                non_working_time_id=None,
-                user_id=None,
-                payload=payload,
-                validation_errors={},
-                result=None,
+
+        async def _commit(p: dict[str, Any]) -> UserNonWorkingTimeSummary:
+            record = await call_version_gated(
+                lambda: self._api.create(user_ref, start_date=start_date, end_date=end_date),
+                feature="User non-working times",
+                floor="17.3",
             )
-        access.ensure_write_enabled("user_schedule", settings=self._settings)
-        record = await call_version_gated(
-            lambda: self._api.create(user_ref, start_date=start_date, end_date=end_date),
-            feature="User non-working times",
-            floor="17.3",
-        )
-        result = self._stamp(record)
-        return UserNonWorkingTimeWriteResult(
-            action="create",
-            state="confirmed",
-            ready=True,
-            message="Non-working time created successfully.",
-            non_working_time_id=result.id,
-            user_id=result.user_id,
+            return self._stamp(record)
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=result,
+            identity={"non_working_time_id": None, "user_id": None},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("user_schedule", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"non_working_time_id": d.id, "user_id": d.user_id},
+            rejected_message="",
+            preview_message=(
+                "OpenProject is ready to create this non-working time. Ask for confirmation, "
+                "then call again with confirm=true."
+            ),
+            success_message="Non-working time created successfully.",
         )
+        return self._to_write_result("create", outcome)
 
     async def update(
         self,
@@ -146,68 +141,65 @@ class UserNonWorkingTimeService:
         if end_date is not None:
             hidden_fields.ensure_field_writable("user_non_working_time", "end_date", settings=self._settings)
             payload["endDate"] = end_date
-        if not confirm:
-            return UserNonWorkingTimeWriteResult(
-                action="update",
-                state="preview",
-                ready=True,
-                message="Ask for confirmation, then call again with confirm=true to write it.",
-                non_working_time_id=non_working_time_id,
-                user_id=None,
-                payload=payload,
-                validation_errors={},
-                result=None,
+        async def _commit(p: dict[str, Any]) -> UserNonWorkingTimeSummary:
+            record = await call_version_gated(
+                lambda: self._api.update(user_ref, non_working_time_id, payload=p),
+                feature="User non-working times",
+                floor="17.3",
             )
-        access.ensure_write_enabled("user_schedule", settings=self._settings)
-        record = await call_version_gated(
-            lambda: self._api.update(user_ref, non_working_time_id, payload=payload),
-            feature="User non-working times",
-            floor="17.3",
-        )
-        result = self._stamp(record)
-        return UserNonWorkingTimeWriteResult(
-            action="update",
-            state="confirmed",
-            ready=True,
-            message="Non-working time updated successfully.",
-            non_working_time_id=result.id,
-            user_id=result.user_id,
+            return self._stamp(record)
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=result,
+            identity={"non_working_time_id": non_working_time_id, "user_id": None},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("user_schedule", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"non_working_time_id": d.id, "user_id": d.user_id},
+            rejected_message="",
+            preview_message="Ask for confirmation, then call again with confirm=true to write it.",
+            success_message="Non-working time updated successfully.",
         )
+        return self._to_write_result("update", outcome)
 
     async def delete(
         self, user_ref: str, non_working_time_id: int, *, confirm: bool = False
     ) -> UserNonWorkingTimeWriteResult:
         access.ensure_read_enabled("user_schedule", settings=self._settings)
         payload = {"id": non_working_time_id}
-        if not confirm:
-            return UserNonWorkingTimeWriteResult(
-                action="delete",
-                state="preview",
-                ready=True,
-                message="Ask for confirmation, then call again with confirm=true to delete it.",
-                non_working_time_id=non_working_time_id,
-                user_id=None,
-                payload=payload,
-                validation_errors={},
-                result=None,
+
+        async def _commit(p: dict[str, Any]) -> None:
+            await call_version_gated(
+                lambda: self._api.delete(user_ref, non_working_time_id),
+                feature="User non-working times",
+                floor="17.3",
             )
-        access.ensure_write_enabled("user_schedule", settings=self._settings)
-        await call_version_gated(
-            lambda: self._api.delete(user_ref, non_working_time_id),
-            feature="User non-working times",
-            floor="17.3",
-        )
-        return UserNonWorkingTimeWriteResult(
-            action="delete",
-            state="confirmed",
-            ready=True,
-            message="Non-working time deleted successfully.",
-            non_working_time_id=non_working_time_id,
-            user_id=None,
+
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=None,
+            identity={"non_working_time_id": non_working_time_id, "user_id": None},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("user_schedule", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"non_working_time_id": non_working_time_id, "user_id": None},
+            rejected_message="",
+            preview_message="Ask for confirmation, then call again with confirm=true to delete it.",
+            success_message="Non-working time deleted successfully.",
+        )
+        return self._to_write_result("delete", outcome)
+
+    def _to_write_result(
+        self, action: str, outcome: _WriteOutcome[UserNonWorkingTimeSummary | None]
+    ) -> UserNonWorkingTimeWriteResult:
+        return UserNonWorkingTimeWriteResult(
+            action=action,
+            state=outcome.state,
+            ready=outcome.ready,
+            message=outcome.message,
+            payload=outcome.payload,
+            validation_errors=outcome.validation_errors,
+            result=outcome.detail,
+            **outcome.identity,
         )

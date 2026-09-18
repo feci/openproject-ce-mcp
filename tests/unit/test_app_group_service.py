@@ -513,6 +513,21 @@ async def test_delete_denies_target_outside_admin_write_and_never_calls_commit()
 
 
 @pytest.mark.asyncio
+async def test_delete_preview_also_denied_without_admin_write_enabled() -> None:
+    # Same unconditional-check tradeoff as create()/update(): delete() has no
+    # prior GET, but the write-enablement check still runs before the confirm
+    # branch, so even a preview is rejected (OPM-2705: this case was missing
+    # before the delete() migration onto _finalize_write's gate_before_preview).
+    api = _FakeGroupApi()
+    service = _service(api)
+
+    with pytest.raises(PermissionDeniedError):
+        await service.delete(3, confirm=False)
+
+    assert api.commit_delete_calls == []
+
+
+@pytest.mark.asyncio
 async def test_delete_preview_does_not_call_commit() -> None:
     api = _FakeGroupApi()
     service = _service(api, settings=_admin_write_settings())

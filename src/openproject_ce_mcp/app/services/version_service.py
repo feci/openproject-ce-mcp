@@ -208,32 +208,23 @@ class VersionService:
         detail = self._stamp(current.to_detail())
         payload = {"id": detail.id, "name": detail.name}
 
-        if not confirm:
-            return VersionWriteResult(
-                action="delete",
-                state="preview",
-                ready=True,
-                message="OpenProject found the version. Ask for confirmation, then call again with confirm=true to delete it.",
-                version_id=detail.id,
-                project=detail.defining_project,
-                payload=payload,
-                validation_errors={},
-                result=None,
-            )
+        async def _commit(p: dict[str, Any]) -> VersionDetail:
+            await self._api.delete(version_id)
+            return detail
 
-        access.ensure_write_enabled("version", settings=self._settings)
-        await self._api.delete(version_id)
-        return VersionWriteResult(
-            action="delete",
-            state="confirmed",
-            ready=True,
-            message="Version deleted successfully.",
-            version_id=detail.id,
-            project=detail.defining_project,
+        outcome = await _finalize_write(
+            confirm=confirm,
             payload=payload,
             validation_errors={},
-            result=detail,
+            identity={"version_id": detail.id, "project": detail.defining_project},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("version", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"version_id": d.id, "project": d.defining_project},
+            rejected_message="",
+            preview_message="OpenProject found the version. Ask for confirmation, then call again with confirm=true to delete it.",
+            success_message="Version deleted successfully.",
         )
+        return self._to_write_result("delete", outcome)
 
     def _build_write_payload(
         self,
