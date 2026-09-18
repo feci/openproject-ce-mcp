@@ -25,11 +25,12 @@ htmlcov/
 .claude/
 .vscode/
 .codex/
+.continue/
 .mcp.json
 .DS_Store
 Thumbs.db
 Desktop.ini
-CONTINUE.md
+/CONTINUE.md
 
 # Local backups
 *.bak.*

@@ -24,6 +24,11 @@ development baseline.
   stdio handshake self-test that never leaves a server process running. API
   connectivity failures now distinguish TLS/certificate errors from a plain
   connection failure and include actionable remediation hints.
+- Documented a verified Continue setup path (`docs/continue.md`), covering
+  the project-scoped `.continue/mcpServers/mcp.json` file and the global
+  `config.yaml` alternative, the Agent Mode requirement, and credential
+  protection. `configure` does not write Continue's config directly; the
+  documented example is validated by an automated test.
 
 ### Changed
 

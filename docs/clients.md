@@ -74,13 +74,14 @@ can double-check it.
 | Codex (CLI + IDE extension) | [Codex](codex.md) |
 | Cursor | [Cursor](cursor.md) |
 | VS Code with GitHub Copilot | [VS Code / GitHub Copilot](github.md) |
+| Continue | [Continue](continue.md) |
 | Any other MCP client | see below |
 
-**Any other MCP client** (Windsurf, JetBrains AI Assistant/Junie, Cline,
-Continue, Warp, Zed, …) uses the same pattern: point `command` at the binary
-from the generated `openproject-mcp.example.json` copy-source and copy the `env`
+**Any other MCP client** (Windsurf, JetBrains AI Assistant/Junie, Cline, Warp,
+Zed, …) uses the same pattern: point `command` at the binary from the
+generated `openproject-mcp.example.json` copy-source and copy the `env`
 values. The root key is almost always `mcpServers` (Zed uses `context_servers`
-with `"source": "custom"`; Continue uses YAML with the same fields).
+with `"source": "custom"`).
 
 ## File layout per client
 
@@ -94,6 +95,12 @@ config to another verbatim:
 | Codex | `.codex/config.toml` | `~/.codex/config.toml` | TOML | `[mcp_servers.openproject]` |
 | Cursor | `.cursor/mcp.json` | `~/.cursor/mcp.json` | JSON | `mcpServers` |
 | VS Code (GitHub Copilot) | `.vscode/mcp.json` | User `mcp.json` | JSON | `servers` |
+
+Continue isn't in this table since `configure` doesn't write its config —
+its recommended standalone `.continue/mcpServers/mcp.json` file is a whole
+self-contained document, not a shared file this table's "one root key, one
+dict entry" model can patch into. See [Continue](continue.md) for its
+manually-documented file layout.
 
 `.mcp.json` *is* Claude Code's project config, so `configure` writes it once and
 reuses it; for every other client chosen at project scope, `configure` also
