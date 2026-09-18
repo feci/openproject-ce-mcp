@@ -29,6 +29,11 @@ development baseline.
   `config.yaml` alternative, the Agent Mode requirement, and credential
   protection. `configure` does not write Continue's config directly; the
   documented example is validated by an automated test.
+- A dedicated Homebrew tap now provides an additional macOS install path
+  (`brew install jtauschl/tap/openproject-ce-mcp`) alongside the canonical
+  PyPI publication, with pinned resource dependencies and a verified install
+  on Apple Silicon and Intel; PyPI remains the source of truth and the tap's
+  Formula is proposed automatically after each release.
 
 ### Changed
 

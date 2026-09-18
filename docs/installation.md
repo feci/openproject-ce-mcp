@@ -107,6 +107,24 @@ point your MCP client's `command` at `uvx` with args `["openproject-ce-mcp"]`
 instead of running `configure` — see [Clients](clients.md) for the per-client
 config shape.
 
+### Homebrew (macOS)
+
+A dedicated tap provides a native `brew install` path on both Apple Silicon
+and Intel macOS:
+
+```bash
+brew tap jtauschl/tap
+brew install openproject-ce-mcp
+openproject-ce-mcp configure
+openproject-ce-mcp --version
+```
+
+[PyPI](https://pypi.org/project/openproject-ce-mcp/) stays the canonical
+publication source — the tap's Formula is proposed automatically after each
+release and reviewed before merging. See the [tap
+repository](https://github.com/jtauschl/homebrew-tap) for Formula
+maintenance details and why a dedicated tap rather than Homebrew Core.
+
 ## Update
 
 Upgrade the installed PyPI package, then restart your MCP client:
@@ -122,6 +140,8 @@ If you installed with another tool:
 uv tool install --upgrade openproject-ce-mcp
 # or, inside the environment you installed it into:
 pip install --upgrade openproject-ce-mcp
+# or, via the Homebrew tap:
+brew upgrade openproject-ce-mcp
 ```
 
 No config rewrite is usually needed after an update. Re-run `openproject-ce-mcp
@@ -187,6 +207,7 @@ Then remove the package itself, matching how you installed it:
 ```bash
 pipx uninstall openproject-ce-mcp   # or: uv tool uninstall openproject-ce-mcp
                                     # or: pip uninstall openproject-ce-mcp
+                                    # or: brew uninstall openproject-ce-mcp
 ```
 
 A source checkout's own `.venv` and caches are just local files — remove the

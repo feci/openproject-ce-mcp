@@ -95,3 +95,67 @@ jobs:
             --title "$GITHUB_REF_NAME" \
             --notes-file release-notes.md \
             dist/*.whl dist/*.tar.gz dist/SHA256SUMS
+
+  update-homebrew-tap:
+    needs: publish
+    runs-on: macos-latest # Homebrew is preinstalled on GitHub-hosted macOS runners
+    timeout-minutes: 15
+    steps:
+      - name: Checkout tap repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: jtauschl/homebrew-tap
+          token: ${{ secrets.TAP_REPO_PAT }}
+
+      - name: Resolve released version, sdist URL, and checksum
+        # The version-specific PyPI endpoint, not the generic /json "latest"
+        # one -- a just-tagged release may not be reflected there instantly,
+        # and this also gives the real sdist URL directly (its path segments
+        # are a content hash, not a predictable pattern from the filename).
+        # Written to a file and read back by Python directly, not piped
+        # through a shell variable via `echo`, which corrupts JSON containing
+        # control characters.
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          curl -sf "https://pypi.org/pypi/openproject-ce-mcp/${version}/json" -o pypi-info.json
+          url="$(python3 -c 'import json; d = json.load(open("pypi-info.json")); print(next(f["url"] for f in d["urls"] if f["packagetype"] == "sdist"))')"
+          sha256="$(python3 -c 'import json; d = json.load(open("pypi-info.json")); print(next(f["digests"]["sha256"] for f in d["urls"] if f["packagetype"] == "sdist"))')"
+          rm pypi-info.json
+          {
+            echo "VERSION=$version"
+            echo "SDIST_URL=$url"
+            echo "SHA256=$sha256"
+          } >> "$GITHUB_ENV"
+
+      - name: Update url, sha256, and version in the Formula
+        run: |
+          sed -i '' "s|^  url \".*\"|  url \"${SDIST_URL}\"|" Formula/openproject-ce-mcp.rb
+          sed -i '' "s|^  sha256 \".*\"|  sha256 \"${SHA256}\"|" Formula/openproject-ce-mcp.rb
+
+      - name: Regenerate pinned resource blocks
+        # The one command that actually understands the dependency closure --
+        # neither known Formula-bump GitHub Action regenerates resource
+        # blocks, they only bump url/sha256/version (verified during
+        # planning: mislav's action documents this limitation directly;
+        # dawidd6's action is a thin wrapper around brew bump-formula-pr,
+        # which has the same gap).
+        run: |
+          brew update-python-resources \
+            --version="$VERSION" \
+            --package-name=openproject-ce-mcp \
+            --exclude-packages=pywin32 \
+            Formula/openproject-ce-mcp.rb
+
+      - name: Open a PR against the tap if the Formula changed
+        env:
+          GH_TOKEN: ${{ secrets.TAP_REPO_PAT }}
+        run: |
+          if git diff --quiet Formula/openproject-ce-mcp.rb; then
+            exit 0
+          fi
+          git checkout -b "bump-${VERSION}"
+          git -c user.name="openproject-ce-mcp release bot" -c user.email="noreply@github.com" \
+            commit -am "openproject-ce-mcp ${VERSION}"
+          git push origin "bump-${VERSION}"
+          gh pr create --title "openproject-ce-mcp ${VERSION}" \
+            --body "Automated bump after the openproject-ce-mcp ${VERSION} PyPI release."
