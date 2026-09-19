@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-import datetime
-
 import pytest
 from _tools_test_helpers import FakeContext
 
 from openproject_ce_mcp.models import SortCriterion
 from openproject_ce_mcp.tools import (
     _duration_between,
-    _pad_fractional_seconds,
     _validate_positive_int,
     bulk_create_work_packages,
     bulk_update_work_packages,
@@ -504,43 +501,15 @@ class TestDurationBetween:
         assert DATETIME_RE.fullmatch("2026-01-01T09:00:00.123456Z")
         assert not DATETIME_RE.fullmatch("2026-01-01T09:00:00.1234567Z")
 
-
-class TestPadFractionalSeconds:
-    """Regression: Python's datetime.fromisoformat only accepts 0, 3, or 6
-    fractional-second digits before 3.11 -- this project supports 3.10+, and
-    DATETIME_RE (which _duration_between's inputs already passed) allows any
-    count from 1 to 6. A non-3/6-digit fraction like "07.5Z" or "00.00001Z"
-    parsed fine locally (3.11+) but raised ValueError on 3.10 in CI, caught
-    only there since it's the one supported version with the stricter
-    parser."""
-
-    def test_pads_single_digit(self) -> None:
-        assert _pad_fractional_seconds("2026-01-01T09:00:07.5Z") == "2026-01-01T09:00:07.500000Z"
-
-    def test_pads_two_digits(self) -> None:
-        assert _pad_fractional_seconds("2026-01-01T09:00:00.25Z") == "2026-01-01T09:00:00.250000Z"
-
-    def test_pads_five_digits(self) -> None:
-        assert _pad_fractional_seconds("2026-01-01T00:00:00.00001Z") == "2026-01-01T00:00:00.000010Z"
-
-    def test_leaves_six_digits_unchanged(self) -> None:
-        assert _pad_fractional_seconds("2026-01-01T00:00:00.000001Z") == "2026-01-01T00:00:00.000001Z"
-
-    def test_leaves_no_fraction_unchanged(self) -> None:
-        assert _pad_fractional_seconds("2026-01-01T09:00:00Z") == "2026-01-01T09:00:00Z"
-
-    def test_pads_with_explicit_offset_not_just_z(self) -> None:
-        assert _pad_fractional_seconds("2026-01-01T09:00:00.5+02:00") == "2026-01-01T09:00:00.500000+02:00"
-
-    def test_padded_result_always_parses_on_fromisoformat(self) -> None:
-        for value in (
-            "2026-01-01T09:00:07.5Z",
-            "2026-01-01T09:00:00.25Z",
-            "2026-01-01T00:00:00.00001Z",
-            "2026-01-01T00:00:00.000001Z",
-            "2026-01-01T09:00:00Z",
-        ):
-            datetime.datetime.fromisoformat(_pad_fractional_seconds(value).replace("Z", "+00:00"))
+    def test_accepts_non_3_or_6_digit_fractional_seconds(self) -> None:
+        # Regression: DATETIME_RE (and OpenProject itself) allow any count of
+        # 1-6 fractional-second digits, not just 0/3/6 -- confirms
+        # _duration_between's direct fromisoformat call (no pre-padding)
+        # correctly handles a non-3/6-digit fraction like "07.5Z" or
+        # "00.00001Z" rather than raising ValueError.
+        assert _duration_between("2026-01-01T09:00:00Z", "2026-01-01T09:00:07.5Z") == "PT7.5S"
+        assert _duration_between("2026-01-01T09:00:00Z", "2026-01-01T09:00:00.25Z") == "PT0.25S"
+        assert _duration_between("2026-01-01T09:00:00Z", "2026-01-01T09:00:00.00001Z") == "PT0.00001S"
 
 
 def test_validate_work_package_ref_accepts_numeric_and_semantic() -> None:

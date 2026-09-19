@@ -154,9 +154,8 @@ from .tools_sprints import (  # noqa: F401 -- @register_tool side effect; re-exp
     list_backlog_buckets,
     list_sprints,
 )
-from .tools_time_entries import (  # noqa: F401 -- @register_tool side effect; re-exported, test_project_and_domain_tools.py imports all eight tool functions and test_tool_validation.py imports both private helpers from here
+from .tools_time_entries import (  # noqa: F401 -- @register_tool side effect; re-exported, test_project_and_domain_tools.py imports all eight tool functions and test_tool_validation.py imports the private helper from here
     _duration_between,
-    _pad_fractional_seconds,
     create_time_entry,
     create_time_entry_until,
     delete_time_entry,

@@ -20,6 +20,7 @@ import asyncio
 from collections.abc import Iterable
 
 from ...config import Settings
+from ...context_gather import gather_in_current_context
 from ..errors import NotFoundError
 from ..policies import scope as scope_policy
 from ..ports.work_package_lookup_api import WorkPackageLookupApi
@@ -158,7 +159,7 @@ class WorkPackageResolver:
             outcomes[href] = allowed
 
         if misses:
-            await asyncio.gather(*(_resolve_one(href) for href in misses))
+            await gather_in_current_context(*(_resolve_one(href) for href in misses))
         return outcomes
 
     async def _project_link_allowed_uncached(self, href: str) -> bool:

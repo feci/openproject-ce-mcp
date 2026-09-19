@@ -48,7 +48,7 @@ import dataclasses
 import re
 import sys
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -61,7 +61,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from openproject_ce_mcp import models  # noqa: E402
 
 
-class ExclusionCategory(str, Enum):
+class ExclusionCategory(StrEnum):
     ENTERPRISE = "enterprise"  # EE-gated per this server's CE-only policy
     LARGE_EMBEDDED = "large_embedded"  # token-heavy embed; exposed via a separate tool/URL instead
     CUSTOM_FIELD_PENDING = "custom_field_pending"

@@ -1,4 +1,13 @@
-"""OPM-2706: "errors never leak credentials or internal details."
+"""OPM-2706: what raise_for_status does and does NOT leak into an error message.
+
+Renamed from test_error_message_does_not_leak_upstream_details.py: that name
+overclaimed relative to this file's own contents -- one of the three tests
+here (test_raise_for_status_passes_through_upstream_message_text_verbatim)
+documents, and asserts, the opposite for OpenProject's own server-provided
+error text. This file's actual scope is the boundary between what's
+structurally unreachable (the API token/Authorization header -- Tests 1/3
+below) and what's a deliberate, accepted pass-through (upstream error text
+-- Test 2), not a blanket "nothing ever leaks" guarantee.
 
 Verified directly against the code before writing these tests (not assumed):
 the API token becomes an `Authorization: Basic ...` header once, at

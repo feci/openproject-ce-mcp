@@ -31,14 +31,17 @@ domains have no validation_errors/form concept at all (always called with
 `validation_errors={}`), so ordering relative to that branch is moot for them
 in practice.
 
-`preview_detail` (default None): every `delete()` that needs to show the
-about-to-be-deleted record in its preview response (Version, Board, Grid,
-Membership, Meeting, Project, TimeEntry, WorkPackage, Storage) fetches that
-record BEFORE the confirm branch (needed for scope/permission checks on the
-target, independent of write-orchestration), then wants to surface it as
-`result` on the preview response even though nothing was committed yet. This
-is genuinely different from `commit`'s return value (which only exists on
-the confirmed branch) -- passing the pre-fetched record through explicitly,
+`preview_detail` (default None): used by the domains that need to show the
+about-to-be-affected record in a preview response -- currently Attachment,
+News, Storage, TimeEntry, and WorkPackage (verified against actual call
+sites, not assumed uniform: Version/Board/Grid/Membership/Meeting/Project's
+delete previews return `result=None` instead, identical to their
+pre-write-orchestration-unification behavior). Where used, the record is
+fetched BEFORE the confirm branch (needed for scope/permission checks on the
+target, independent of write-orchestration), then surfaced as `result` on
+the preview response even though nothing was committed yet. This is
+genuinely different from `commit`'s return value (which only exists on the
+confirmed branch) -- passing the pre-fetched record through explicitly,
 rather than threading it through `commit`, keeps `commit` a pure "do the
 mutation" callable that's never invoked on a preview.
 """

@@ -8,7 +8,7 @@ version = "0.4.0"
 description = "MCP server for OpenProject Community Edition with guarded read/write support."
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
   { name = "Jürgen Tauschl", email = "juergen@tauschl.de" },
 ]
@@ -19,7 +19,6 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
@@ -112,7 +111,7 @@ show_missing = true
 
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = [
@@ -134,5 +133,5 @@ ignore = [
 "tests/**" = ["SIM"]  # test code may be more verbose
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 files = ["src/openproject_ce_mcp"]

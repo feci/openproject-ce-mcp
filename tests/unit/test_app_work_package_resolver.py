@@ -488,3 +488,27 @@ async def test_project_links_allowed_cancellation_releases_permits_and_a_later_c
         resolver.project_links_allowed(fresh_hrefs, context=WorkPackageAllowedContext()), timeout=2.0
     )
     assert all(outcome is True for outcome in outcomes.values())
+
+
+@pytest.mark.asyncio
+async def test_project_links_allowed_records_policy_observation_despite_internal_gather() -> None:
+    """Regression: `project_links_allowed` fans its per-href checks out
+    through `context_gather.gather_in_current_context` (previously plain
+    `asyncio.gather`, which silently loses ContextVar writes made inside a
+    gathered coroutine -- see context_gather.py's own docstring). Each href
+    resolves via the decorated `ensure_project_link_allowed`, which writes
+    `policy_observation` -- this must survive the internal fan-out and be
+    observable by the caller afterwards, not come back None."""
+    from openproject_ce_mcp import policy_observation
+
+    hrefs = [f"/api/v3/work_packages/{i}" for i in range(1, 6)]
+    records = {href: _wp_payload(i) for i, href in enumerate(hrefs, start=1)}
+    resolver, _api = _resolver(records)
+    context = WorkPackageAllowedContext()
+
+    policy_observation.reset()
+    outcomes = await resolver.project_links_allowed(hrefs, context=context)
+
+    assert all(outcome is True for outcome in outcomes.values())
+    assert policy_observation.current_policy_decision() is not None
+    assert policy_observation.current_project_scope() is not None

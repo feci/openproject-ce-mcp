@@ -306,3 +306,36 @@ async def test_configured_api_token_never_appears_in_any_captured_log_record(
         structured = getattr(record, "structured", None)
         if structured is not None:
             assert api_token not in json.dumps(structured)
+
+
+@pytest.mark.asyncio
+async def test_real_business_exception_survives_a_broken_logging_getter(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: _emit_tool_call_log itself must never be allowed to
+    change a tool call's outcome. Before this fix, an exception raised
+    inside _emit_tool_call_log's own record construction (e.g. a future bug
+    in policy_observation/http_request_counter) would propagate uncaught out
+    of the `except` block that was calling it, superseding and hiding the
+    real business exception (here, [VALIDATION_FAILED]) the caller was
+    already correctly handling -- the client would see a bare, uncoded
+    RuntimeError from the logging infrastructure instead."""
+    from openproject_ce_mcp import policy_observation
+
+    def _broken_getter() -> str | None:
+        raise RuntimeError("simulated logging-infrastructure bug")
+
+    monkeypatch.setattr(policy_observation, "current_project_scope", _broken_getter)
+
+    @_categorize_tool_errors
+    async def failing_tool(_ctx) -> str:
+        raise ValueError("the real business error")
+
+    with caplog.at_level(logging.WARNING, logger=LOGGER.name):
+        with pytest.raises(ValueError, match=r"\[VALIDATION_FAILED\] the real business error"):
+            await failing_tool(_FakeCtx("req-10"))
+
+    # No structured tool_call record made it out (the record dict was never
+    # finished), but the logging failure itself was still captured locally.
+    assert _structured_records(caplog) == []
+    assert any("Failed to emit structured tool-call log" in r.message for r in caplog.records)

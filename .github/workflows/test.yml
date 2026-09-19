@@ -69,7 +69,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -97,7 +97,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -323,10 +323,19 @@ jobs:
         # A failure here is a real, correct gate failure, not a flaky check:
         # it means the release candidate's own version wasn't bumped past
         # the last published release, which must be fixed before tagging.
+        #
+        # Exact-token comparison, not a substring/grep match: "openproject-ce-mcp
+        # 0.4.1" is a substring of "openproject-ce-mcp 0.4.10"/"0.4.11"/etc, so
+        # `grep -qv "0.4.1"` would wrongly PASS a truly stale baseline binary
+        # the moment the 0.4.x line reaches a second patch digit.
         run: |
           out="$(openproject-ce-mcp --version)"
           echo "$out"
-          echo "$out" | grep -qv "${{ env.BASELINE_VERSION }}"
+          candidate_version="${out##* }"
+          if [ "$candidate_version" = "${{ env.BASELINE_VERSION }}" ]; then
+            echo "::error::candidate version ($candidate_version) matches the baseline (${{ env.BASELINE_VERSION }}) -- version was not bumped" >&2
+            exit 1
+          fi
 
       - name: Verify pre-existing config file is unchanged and still valid JSON
         working-directory: ${{ env.SCRATCH }}

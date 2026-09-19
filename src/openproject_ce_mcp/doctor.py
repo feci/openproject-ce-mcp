@@ -153,10 +153,6 @@ def _check_config_parsing(client_configs: list[tuple]) -> tuple[bool, dict[str, 
                 root_key = client.root_key or "mcpServers"
                 has_entry = "openproject" in config.get(root_key, {})
             elif client.fmt == "toml":
-                # On Python 3.10 without tomllib, we can't parse Codex TOML
-                if _tomllib is None:
-                    print(f"[WARN] {client.label}: Codex TOML requires Python 3.11+ ({target.name})", file=sys.stderr)
-                    continue
                 config = _tomllib.loads(target.read_text())
                 has_entry = "openproject" in config.get("mcp_servers", {})
             else:
@@ -370,7 +366,7 @@ async def _check_stdio_handshake(settings: Settings, *, timeout: float = 5.0) ->
         await asyncio.wait_for(_build_and_verify_dispatch(settings), timeout=timeout)
         print("[OK] MCP: stdio dispatch handshake verified")
         return True
-    except asyncio.TimeoutError:
+    except TimeoutError:
         print(
             f"[FAIL] MCP: stdio handshake did not complete within {timeout}s "
             "(this indicates an SDK-internal issue, not a network problem)",

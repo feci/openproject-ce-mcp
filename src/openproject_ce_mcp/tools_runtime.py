@@ -358,15 +358,25 @@ def _emit_tool_call_log(
     request_id: Any,
     log: Callable[..., None],
 ) -> None:
-    record: ToolCallLogRecord = {
-        "tool": tool,
-        "status": status,
-        "duration_ms": int((time.monotonic() - start) * 1000),
-        "error_code": error_code,
-        "layer": layer,
-        "http_requests": http_request_counter.current(),
-        "project_scope": policy_observation.current_project_scope(),
-        "policy_decision": policy_observation.current_policy_decision(),
-        "request_id": str(request_id) if request_id is not None else None,
-    }
-    log("tool_call", extra={"structured": record})
+    """Logging is a side effect of a tool call, never allowed to change its
+    OUTCOME -- a bug in this function (or in the http_request_counter/
+    policy_observation getters it calls) must never replace or mask the
+    real business exception a caller's `except` block is already handling
+    (e.g. `[VALIDATION_FAILED]`), which is what would happen if this raised
+    into that block uncaught. Caught, logged locally, and swallowed instead.
+    """
+    try:
+        record: ToolCallLogRecord = {
+            "tool": tool,
+            "status": status,
+            "duration_ms": int((time.monotonic() - start) * 1000),
+            "error_code": error_code,
+            "layer": layer,
+            "http_requests": http_request_counter.current(),
+            "project_scope": policy_observation.current_project_scope(),
+            "policy_decision": policy_observation.current_policy_decision(),
+            "request_id": str(request_id) if request_id is not None else None,
+        }
+        log("tool_call", extra={"structured": record})
+    except Exception:
+        LOGGER.exception("Failed to emit structured tool-call log for %s", tool)

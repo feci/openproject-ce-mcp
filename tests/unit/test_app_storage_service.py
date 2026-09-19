@@ -362,6 +362,26 @@ async def test_create_preview_also_denied_without_admin_write_enabled() -> None:
 
 
 @pytest.mark.asyncio
+async def test_create_denies_with_capability_disabled_even_for_invalid_provider_type() -> None:
+    """Regression: the write-enabled check must fire before provider_type
+    validation, or a caller with admin write disabled gets
+    [VALIDATION_FAILED] instead of [CAPABILITY_DISABLED] for an invalid
+    provider_type -- the wrong classification, and a real information
+    leak about internal validation rules to a caller who isn't even
+    authorized to attempt the write in the first place. Must hold at
+    confirm=False too, not just confirm=True."""
+    api = _FakeStorageApi()
+    service = _service(api)  # admin_write defaults False
+
+    with pytest.raises(PermissionDeniedError):
+        await service.create(name="X", provider_type="NotAProvider", confirm=False)
+    with pytest.raises(PermissionDeniedError):
+        await service.create(name="X", provider_type="NotAProvider", confirm=True)
+
+    assert api.commit_create_calls == []
+
+
+@pytest.mark.asyncio
 async def test_create_rejects_when_name_field_is_hidden() -> None:
     settings = dataclasses.replace(_admin_write_settings(), hidden_fields={"storage": ("name",)})
     api = _FakeStorageApi()

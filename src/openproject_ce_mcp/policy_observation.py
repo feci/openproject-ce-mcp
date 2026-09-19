@@ -25,6 +25,14 @@ Reset once per tool call by the same wrapper that resets `http_request_counter`
 during one call never leaks into the next call's log line on the same
 worker (contextvars are otherwise task-scoped, but the reset makes this
 independent of scheduler details).
+
+A plain ContextVar write is invisible across `asyncio.gather`/`create_task`
+-- see `http_request_counter.py`'s docstring for the mechanism. Any of the
+six raising functions above, when reached through a `gather`-ed coroutine
+(e.g. `WorkPackageResolver.project_links_allowed`'s concurrent per-href
+checks), must have that `gather` call go through
+`context_gather.gather_in_current_context`, or this module's writes are
+silently lost for that call.
 """
 
 from __future__ import annotations

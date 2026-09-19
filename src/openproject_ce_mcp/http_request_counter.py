@@ -5,15 +5,22 @@ A `contextvars.ContextVar`, not an instance attribute on `HttpxTransport` or
 every real wire-level HTTP attempt actually happens, including each
 individual retry attempt, not just each logical `client.request()` call --
 has no reference to "the current tool call" to attribute a count to. A
-contextvar is this codebase's own established idiom for exactly this shape
-of request-scoped state (see `WorkPackageResolver`'s bounded semaphore and
-`WorkPackageAllowedContext`'s per-call cache for the same "state scoped to
-one in-flight call, not to the transport object's lifetime" pattern).
+contextvar is this codebase's own established idiom for this shape of
+request-scoped state.
 
 Counting at `RetryTransport` (not `HttpxTransport._request`/`_send_stream`)
 is deliberate: a retried request is a REAL HTTP request that reached the
 network, and undercounting it as "1" per logical operation would misreport
 the actual request volume a tool call generated.
+
+A plain ContextVar write is invisible across `asyncio.gather`/`create_task`,
+since each new Task gets its own COPY of the context, not a shared
+reference -- a write inside a gathered coroutine never reaches the caller
+that awaited it. Any code path that increments this counter (or writes
+`policy_observation`) inside a `gather`-ed coroutine must go through
+`context_gather.gather_in_current_context` instead of `asyncio.gather`
+directly, or the count silently comes back wrong (typically too low, never
+an error) for that tool call. See `context_gather.py`'s own docstring.
 """
 
 from __future__ import annotations

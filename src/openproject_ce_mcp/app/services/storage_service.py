@@ -163,6 +163,14 @@ class StorageService:
         drive_id: str | None = None,
         confirm: bool = False,
     ) -> StorageWriteResult:
+        # Checked unconditionally, before any input validation below -- see
+        # this file's docstring. Must fire before provider_type/
+        # authentication_method validation, or a caller with admin write
+        # disabled gets [VALIDATION_FAILED] instead of [CAPABILITY_DISABLED]
+        # for an invalid provider_type, even at confirm=False; `_finalize_
+        # write`'s own `gate_before_preview` re-check is then a harmless
+        # no-I/O redundant check.
+        access.ensure_write_enabled("admin", settings=self._settings)
         urn = _PROVIDER_TYPE_URN.get(provider_type)
         if urn is None:
             raise InvalidInputError(

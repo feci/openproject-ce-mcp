@@ -9,13 +9,17 @@ single source of truth for OPM-2708's agent-facing error codes and OPM-2709's
 structured-logging `layer` field. This replaces a separate
 type-to-code/type-to-layer lookup table (which `tools_runtime.py` used to
 maintain as `_ERROR_CATEGORY`): a new exception class that forgets to declare
-`code`/`layer` is a class-definition-time omission a type checker can catch,
-rather than a silently-wrong or missing entry in a second file that must be
-kept in sync by hand. `layer` values follow ARCH-05's three-tier translation
-scheme (transport / HTTP-status-mapper / business-domain), plus two values
-for exceptions that never reach that scheme at all: "validation" (a bare
-ValueError from a tool-body validator, never an OpenProjectError) and
-"internal" (the sanitization backstop for a genuinely unexpected bug).
+`code`/`layer` is caught at class-definition time (by `__init_subclass__`
+below), not silently inherited from its parent -- a type checker alone
+cannot catch this (a subclass that omits both ClassVars type-checks fine and
+just inherits the parent's values, which would be actively misleading rather
+than an error), so the check is enforced at runtime, once, when the module
+defining the subclass is imported. `layer` values follow ARCH-05's
+three-tier translation scheme (transport / HTTP-status-mapper /
+business-domain), plus two values for exceptions that never reach that
+scheme at all: "validation" (a bare ValueError from a tool-body validator,
+never an OpenProjectError) and "internal" (the sanitization backstop for a
+genuinely unexpected bug).
 """
 
 from __future__ import annotations
@@ -28,6 +32,16 @@ class OpenProjectError(Exception):
 
     code: ClassVar[str] = "OPENPROJECT_UNAVAILABLE"
     layer: ClassVar[str] = "http_mapper"
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        super().__init_subclass__(**kwargs)
+        if "code" not in cls.__dict__ or "layer" not in cls.__dict__:
+            raise TypeError(
+                f"{cls.__name__} must declare its own `code`/`layer` ClassVar "
+                "overrides -- inheriting them silently from a parent exception "
+                "class is not allowed, since a copy-pasted subclass that forgot "
+                "to change them would otherwise type-check and run without error."
+            )
 
 
 class AuthenticationError(OpenProjectError):

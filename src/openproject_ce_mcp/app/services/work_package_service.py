@@ -97,6 +97,7 @@ import re
 from typing import Any
 
 from ...config import Settings
+from ...context_gather import gather_in_current_context
 from ...models import (
     ActivityWriteResult,
     BatchWorkPackageReadItemResult,
@@ -1033,7 +1034,7 @@ class WorkPackageService:
             overdue_only=overdue_only,
             due_within_days=due_within_days,
         )
-        result, exact_match = await asyncio.gather(
+        result, exact_match = await gather_in_current_context(
             self._list_collection(
                 project_id=project_id,
                 filters=[{"subject_or_id": {"operator": "**", "values": [search]}}, *other_filters],
@@ -1339,7 +1340,7 @@ class WorkPackageService:
                     # doesn't alter which exceptions are item-local.
                     return (work_package_ref, None, str(e))
 
-        results = await asyncio.gather(*[fetch_one(ref) for ref in ids])
+        results = await gather_in_current_context(*[fetch_one(ref) for ref in ids])
 
         items: builtins.list[BatchWorkPackageReadItemResult] = []
         succeeded = 0
@@ -1904,7 +1905,7 @@ class WorkPackageService:
                     )
                     item_results.append(_bulk_item_result(index=i, result=result))
                 except Exception as exc:
-                    # Broad on purpose: unlike fetch_one's asyncio.gather
+                    # Broad on purpose: unlike fetch_one's concurrent gather
                     # (where one item's failure would abort ALL items), this
                     # is a sequential loop and every item's own failure must
                     # stay isolated, expected exception type or not -- so the
@@ -2183,7 +2184,7 @@ class WorkPackageService:
                     )
                     item_results.append(_bulk_item_result(index=i, result=result))
                 except Exception as exc:
-                    # Broad on purpose: unlike fetch_one's asyncio.gather
+                    # Broad on purpose: unlike fetch_one's concurrent gather
                     # (where one item's failure would abort ALL items), this
                     # is a sequential loop and every item's own failure must
                     # stay isolated, expected exception type or not -- so the

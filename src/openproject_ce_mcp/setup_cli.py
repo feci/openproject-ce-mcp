@@ -31,6 +31,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib as _tomllib
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -49,15 +50,6 @@ from openproject_ce_mcp.client import (
     TransportError,
 )
 from openproject_ce_mcp.config import ConfigError, Settings, tool_exposure_violations
-
-# tomllib is stdlib only on Python 3.11+. This installer supports 3.10 (which
-# lacks it) and must stay dependency-free, so import it optionally. When present
-# we use it to *validate* merged TOML before writing; when absent we fall back to
-# the text-level checks in _merge_codex_toml.
-try:
-    import tomllib as _tomllib  # type: ignore[import-not-found]
-except ModuleNotFoundError:  # Python 3.10
-    _tomllib = None  # type: ignore[assignment]
 
 # This file lives at src/openproject_ce_mcp/setup_cli.py inside a checkout. The
 # repo root (two levels up) then contains pyproject.toml and the source tree;
@@ -280,16 +272,16 @@ def _codex_block(command: str, env: dict[str, str]) -> str:
 # array values inside a table from being mistaken for the end of that table.
 # Limitation (accepted): a header whose quoted key contains a literal ``]`` (e.g.
 # ``["weird]name"]``) is not recognized. Codex never emits such names; the worst
-# case is that _merge_codex_toml's tomllib round-trip check (3.11+) rejects the
+# case is that _merge_codex_toml's tomllib round-trip check rejects the
 # result and we refuse to write — fail-safe, not corruption.
 _TOML_HEADER_RE = re.compile(r"^\[\[?[^\]]+\]\]?\s*(#.*)?$")
 
 # The openproject server expressed as a dotted key or inline table at top level,
 # e.g. ``mcp_servers.openproject = { ... }`` or ``mcp_servers.openproject.command
 # = "…"``. Codex does not emit this form, but a hand-edited config might. We can't
-# safely rewrite it with text edits (no TOML writer on 3.10), so we detect it and
-# refuse rather than append a ``[mcp_servers.openproject]`` header that would
-# collide with it ("Cannot declare openproject twice").
+# safely rewrite it with text edits (the stdlib has no TOML writer), so we detect
+# it and refuse rather than append a ``[mcp_servers.openproject]`` header that
+# would collide with it ("Cannot declare openproject twice").
 _CODEX_DOTTED_RE = re.compile(r"^mcp_servers\.openproject(\.[^\s=]+)?\s*=")
 
 
@@ -343,22 +335,20 @@ def _openproject_server_entry(data: dict, root_key: str) -> dict:
 def _merge_codex_toml(existing: str, command: str, env: dict[str, str]) -> str:
     """Preserve the rest of the Codex config, replacing only the openproject table.
 
-    On Python 3.11+ the merged output is parsed with tomllib as a final guard: if
-    it does not round-trip to valid TOML with the expected openproject command,
-    we raise CodexMergeError rather than write a corrupt config. On 3.10 (no
-    tomllib) we rely on the text-level checks in _strip_codex_openproject.
+    The merged output is parsed with tomllib as a final guard: if it does not
+    round-trip to valid TOML with the expected openproject command, we raise
+    CodexMergeError rather than write a corrupt config.
     """
     kept = _strip_codex_openproject(existing).rstrip()
     block = _codex_block(command, env)
     merged = f"{kept}\n\n{block}\n" if kept else f"{block}\n"
-    if _tomllib is not None:
-        try:
-            data = _tomllib.loads(merged)
-        except _tomllib.TOMLDecodeError as exc:
-            raise CodexMergeError(f"merged Codex config is not valid TOML ({exc})") from exc
-        server = _openproject_server_entry(data, "mcp_servers")
-        if server.get("command") != command:
-            raise CodexMergeError("merged Codex config did not round-trip openproject")
+    try:
+        data = _tomllib.loads(merged)
+    except _tomllib.TOMLDecodeError as exc:
+        raise CodexMergeError(f"merged Codex config is not valid TOML ({exc})") from exc
+    server = _openproject_server_entry(data, "mcp_servers")
+    if server.get("command") != command:
+        raise CodexMergeError("merged Codex config did not round-trip openproject")
     return merged
 
 
@@ -733,9 +723,12 @@ def _run_uninstall() -> None:
 
 def _check_python() -> None:
     # Intentional runtime guard: this setup script may be launched by whatever
-    # interpreter the user has on PATH, which can predate the project minimum.
-    if sys.version_info < (3, 10):  # noqa: UP036
-        print(f"Python 3.10+ required. Current: {sys.version}", file=sys.stderr)
+    # interpreter the user has on PATH, which can predate the project minimum
+    # -- ruff's UP036 assumes a check against the declared floor is always
+    # dead code, which is backwards here: this IS the check that floor exists
+    # to enforce, for a user whose PATH resolves to an older interpreter.
+    if sys.version_info < (3, 11):  # noqa: UP036
+        print(f"Python 3.11+ required. Current: {sys.version}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -765,8 +758,7 @@ def _read_client_env(client: Client, *, target: Path | None = None) -> dict[str,
     ``target`` defaults to the client's global config; pass ``client.project_target``
     to read the project-local file. Used to pre-fill prompt defaults so amending a
     single flag does not force re-entering the base URL and token. Returns {} if the
-    file has no config yet or its openproject entry can't be read; TOML (Codex) is
-    not parsed for prefill on Python 3.10 (no tomllib) and returns {}.
+    file has no config yet or its openproject entry can't be read.
     """
     target = target if target is not None else client.target
     if target is None or not target.exists():
@@ -774,8 +766,6 @@ def _read_client_env(client: Client, *, target: Path | None = None) -> dict[str,
     try:
         text = target.read_text(encoding="utf-8")
         if client.fmt == "toml":
-            if _tomllib is None:
-                return {}
             data = _tomllib.loads(text)
             return _openproject_server_entry(data, "mcp_servers").get("env", {})
         data = json.loads(text)

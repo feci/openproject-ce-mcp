@@ -2,28 +2,26 @@
 list_time_entries, get_time_entry, create_time_entry, update_time_entry,
 create_time_entry_until, update_time_entry_until, delete_time_entry.
 
-Also holds two private helpers used only by create_time_entry_until/
-update_time_entry_until: `_pad_fractional_seconds` (normalizes a date-time's
-fractional-seconds fragment to exactly 6 digits before `fromisoformat`) and
-`_duration_between` (derives the ISO 8601 `hours` duration OpenProject's API
-actually accepts from a caller-supplied start_time/end_time pair, since the
-API has no `end_time` write field of its own -- see create_time_entry's
-docstring). Neither helper has any caller outside this module.
+Also holds a private helper used only by create_time_entry_until/
+update_time_entry_until: `_duration_between` (derives the ISO 8601 `hours`
+duration OpenProject's API actually accepts from a caller-supplied
+start_time/end_time pair, since the API has no `end_time` write field of
+its own -- see create_time_entry's docstring). Has no caller outside this
+module.
 
-Their `@register_tool` decorators come from `tools_runtime`, never from
+Its `@register_tool` decorators come from `tools_runtime`, never from
 `tools.py` -- see that module's own docstring for why. `tools.py` imports
 this module for the decorator's registration side effect and re-exports all
-ten names: the eight tool functions because existing tests
+nine names: the eight tool functions because existing tests
 (`tests/unit/test_project_and_domain_tools.py`) import all of them directly
-from `openproject_ce_mcp.tools`, and both private helpers because
-`tests/unit/test_tool_validation.py` imports `_duration_between` and
-`_pad_fractional_seconds` directly from `openproject_ce_mcp.tools` too.
+from `openproject_ce_mcp.tools`, and `_duration_between` because
+`tests/unit/test_tool_validation.py` imports it directly from
+`openproject_ce_mcp.tools` too.
 """
 
 from __future__ import annotations
 
 import datetime
-import re
 
 from mcp.server.mcpserver import Context
 
@@ -349,19 +347,6 @@ async def delete_time_entry(
     return await _run_tool(client.time_entry.delete(time_entry_id=safe_id, confirm=confirm))
 
 
-def _pad_fractional_seconds(value: str) -> str:
-    """Pad a `.d{1,6}` fractional-seconds fragment to exactly 6 digits.
-
-    Python's `datetime.fromisoformat` only accepts 0, 3, or 6 fractional
-    digits before 3.11 (this project supports 3.10+); the date-time validator
-    in tools_validation.py accepts any count from 1 to 6 (matching what
-    OpenProject itself accepts), so a value like "09:00:07.5Z" must be
-    normalized to "09:00:07.500000Z" before parsing, not just have "Z"
-    swapped for "+00:00".
-    """
-    return re.sub(r"\.(\d{1,6})(?=Z|[+-]\d{2}:\d{2}$)", lambda m: f".{m.group(1):0<6}", value)
-
-
 def _duration_between(start_time: str, end_time: str) -> str:
     """Compute an ISO 8601 duration string for end_time - start_time.
 
@@ -371,9 +356,17 @@ def _duration_between(start_time: str, end_time: str) -> str:
     Uses timedelta's own exact integer fields (days/seconds/microseconds),
     never total_seconds() -- a float -- for the whole-unit breakdown, so the
     hours/minutes/seconds split is exact by construction.
+
+    `datetime.fromisoformat` (3.11+) accepts any 1-6-digit fractional-seconds
+    count directly, matching the date-time validator in tools_validation.py
+    (which also accepts 1-6 digits, per what OpenProject itself accepts) --
+    no pre-normalization needed, just swap "Z" for the "+00:00" fromisoformat
+    itself doesn't (pre-3.11 the parser was stricter about a bare "Z" suffix,
+    but 3.11+ accepts it natively too; the .replace() stays for clarity, not
+    necessity, and is harmless when already absent).
     """
-    start = datetime.datetime.fromisoformat(_pad_fractional_seconds(start_time).replace("Z", "+00:00"))
-    end = datetime.datetime.fromisoformat(_pad_fractional_seconds(end_time).replace("Z", "+00:00"))
+    start = datetime.datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+    end = datetime.datetime.fromisoformat(end_time.replace("Z", "+00:00"))
     delta = end - start
     if delta <= datetime.timedelta(0):
         raise ValueError("end_time must be after start_time.")
