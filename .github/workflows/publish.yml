@@ -103,14 +103,24 @@ jobs:
 
   update-homebrew-tap:
     needs: publish
-    runs-on: macos-latest # Homebrew is preinstalled on GitHub-hosted macOS runners
+    runs-on: ubuntu-latest # Linuxbrew is preinstalled here too; nothing this job does is macOS-specific
     timeout-minutes: 15
+    permissions: {} # only ever authenticates via secrets.TAP_REPO_PAT below, never GITHUB_TOKEN
     steps:
       - name: Checkout tap repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: jtauschl/homebrew-tap
           token: ${{ secrets.TAP_REPO_PAT }}
+          persist-credentials: false # this job's own steps pass TAP_REPO_PAT explicitly where needed;
+          # letting checkout write it into .git/config would leave it usable by
+          # any other process in the job, e.g. a malicious transitive
+          # dependency's setup.py executed below by brew update-python-resources
+
+      - name: Add Linuxbrew to PATH
+        # Preinstalled on the ubuntu-latest image but deliberately not on PATH
+        # by default (actions/runner-images' own Ubuntu readme).
+        run: echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
 
       - name: Resolve released version, sdist URL, and checksum
         # The version-specific PyPI endpoint, not the generic /json "latest"
@@ -133,9 +143,13 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Update url, sha256, and version in the Formula
+        # GNU sed (this job now runs on ubuntu-latest, not macOS) takes -i
+        # with no argument for "no backup file" -- BSD sed's -i requires an
+        # (empty-string) argument for the same thing, so the two are not
+        # interchangeable.
         run: |
-          sed -i '' "s|^  url \".*\"|  url \"${SDIST_URL}\"|" Formula/openproject-ce-mcp.rb
-          sed -i '' "s|^  sha256 \".*\"|  sha256 \"${SHA256}\"|" Formula/openproject-ce-mcp.rb
+          sed -i "s|^  url \".*\"|  url \"${SDIST_URL}\"|" Formula/openproject-ce-mcp.rb
+          sed -i "s|^  sha256 \".*\"|  sha256 \"${SHA256}\"|" Formula/openproject-ce-mcp.rb
 
       - name: Regenerate pinned resource blocks
         # The one command that actually understands the dependency closure --
@@ -158,6 +172,13 @@ jobs:
           if git diff --quiet Formula/openproject-ce-mcp.rb; then
             exit 0
           fi
+          # persist-credentials: false above means checkout never wrote
+          # TAP_REPO_PAT into .git/config -- `gh auth setup-git` sets up git's
+          # credential helper to use GH_TOKEN for this push only, instead of
+          # a plaintext-URL credential that would sit in .git/config for the
+          # rest of the job (including the untrusted brew update-python-resources
+          # step above, which executes arbitrary transitive dependencies' setup.py).
+          gh auth setup-git
           git checkout -b "bump-${VERSION}"
           git -c user.name="openproject-ce-mcp release bot" -c user.email="noreply@github.com" \
             commit -am "openproject-ce-mcp ${VERSION}"

@@ -85,8 +85,11 @@ def mock_connection_error_transport():
 # Binary check tests
 
 
-def test_check_binary_always_passes():
-    """Binary check should always pass (if doctor runs, binary exists)."""
+def test_check_binary_passes_under_the_current_test_runtime():
+    """The actual interpreter running this test suite is always >= the
+    pyproject.toml floor (enforced by CI itself) -- see
+    test_check_binary_fails_below_minimum_python_version for the case where
+    the version is genuinely below that floor."""
     from openproject_ce_mcp.doctor import _check_binary
 
     result = _check_binary()
@@ -114,6 +117,29 @@ def test_check_binary_reports_python_version(capsys):
     captured = capsys.readouterr()
     assert "[OK] Python:" in captured.out
     assert platform.python_version() in captured.out
+
+
+def test_check_binary_fails_below_minimum_python_version(monkeypatch, capsys):
+    """Regression (Opus review): _check_binary REPORTED the Python version
+    but never actually compared it against pyproject.toml's >=3.11 floor --
+    every path returned True unconditionally, so a too-old interpreter would
+    be reported as [OK]. Verified via mutation: with the comparison removed,
+    this test fails (asserts False, gets True)."""
+    from openproject_ce_mcp import doctor
+
+    monkeypatch.setattr(doctor.sys, "version_info", (3, 10, 0))
+    result = doctor._check_binary()
+    captured = capsys.readouterr()
+    assert result is False
+    assert "[FAIL] Python:" in captured.out
+    assert "3.11" in captured.out
+
+
+def test_check_binary_passes_at_exactly_the_minimum_python_version(monkeypatch):
+    from openproject_ce_mcp import doctor
+
+    monkeypatch.setattr(doctor.sys, "version_info", (3, 11, 0))
+    assert doctor._check_binary() is True
 
 
 # Client discovery tests

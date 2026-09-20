@@ -63,6 +63,19 @@ class StrictMCPServer(MCPServer):
            a work-package body fragment) that must never reach a raw,
            unsanitized error message.
         """
+        # Reset here, not only inside tools_runtime.py's per-tool wrapper: an
+        # unknown-argument rejection below never reaches that wrapper at all
+        # (the tool handler is never invoked), so without this the dispatch
+        # log would attribute a PRIOR, unrelated call's leftover
+        # http_requests/project_scope/policy_decision to this validation
+        # failure. Currently masked by the SDK's own per-request task
+        # isolation (each dispatch gets a fresh copy of the ContextVar
+        # context, see context_gather.py's docstring for the general
+        # mechanism), but that isolation is an SDK implementation detail
+        # this module doesn't control -- resetting explicitly here makes the
+        # correctness local instead of borrowed from it.
+        http_request_counter.reset()
+        policy_observation.reset()
         start = time.monotonic()
         # Context.request_id is a property that raises ValueError (not
         # AttributeError) when the Context wraps no real request_context

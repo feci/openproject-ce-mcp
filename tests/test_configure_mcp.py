@@ -1068,6 +1068,49 @@ def test_merge_prefill_explicit_empty_scope_overrides_broader_global_value(tmp_p
     assert merged[scope_key] == ""
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("on", True),
+        ("off", False),
+        ("true", True),
+        ("false", False),
+        ("1", True),
+        ("0", False),
+        ("yes", True),
+        ("no", False),
+        ("TRUE", True),
+        ("Off", False),
+    ],
+)
+def test_bool_from_env_matches_runtime_parse_bool_vocabulary(value: str, expected: bool) -> None:
+    """Regression (Opus review): _bool_from_env previously accepted only
+    true/1/yes and false/0/no, a narrower vocabulary than runtime's own
+    _parse_bool (which also accepts on/off). A value like "off" -- valid and
+    honored by Settings.from_env -- was silently treated as unrecognized here
+    and fell back to the caller's `fallback` default instead. For several
+    write flags the wizard passes fallback=True, so re-running configure
+    against a config with e.g. OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE=off
+    would show the prompt defaulting back to Enabled -- accepting the
+    default with a bare Enter would silently re-enable a write the user had
+    deliberately turned off."""
+    assert c._bool_from_env({"K": value}, "K", fallback=not expected) is expected
+
+
+def test_bool_from_env_falls_back_on_unrecognized_value() -> None:
+    # An invalid value must not crash the wizard (unlike runtime's
+    # _parse_bool, which raises ConfigError) -- it's a prefill default, not
+    # a hard validation gate; falling back keeps the wizard usable against a
+    # hand-corrupted config file.
+    assert c._bool_from_env({"K": "garbage"}, "K", fallback=True) is True
+    assert c._bool_from_env({"K": "garbage"}, "K", fallback=False) is False
+
+
+def test_bool_from_env_missing_key_uses_fallback() -> None:
+    assert c._bool_from_env({}, "K", fallback=True) is True
+    assert c._bool_from_env({}, "K", fallback=False) is False
+
+
 def test_shim_reexports_public_names() -> None:
     # The root configure_mcp.py shim must re-export main and helpers so a
     # manual source checkout (`python3 configure_mcp.py`) and any importer

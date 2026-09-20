@@ -177,6 +177,41 @@ async def test_unknown_argument_dispatch_failure_is_also_logged(
     assert structured[0]["error_code"] == "VALIDATION_FAILED"
 
 
+async def test_dispatch_validation_log_does_not_leak_a_prior_calls_counters(
+    strict_mcp: StrictMCPServer, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Regression (Opus review): an unknown-argument rejection never reaches
+    tools_runtime.py's per-tool wrapper (the tool handler is never invoked),
+    so that wrapper's own http_request_counter.reset()/policy_observation.reset()
+    never runs for this call. Without call_tool's own reset, a validation
+    failure right after a call that left the counters non-empty/non-None
+    would misattribute that PRIOR call's http_requests/project_scope/
+    policy_decision to this one. Currently masked by the real MCP SDK's
+    per-request task isolation (each dispatch gets a fresh ContextVar
+    context copy) -- this test drives both calls through the SAME task
+    (matching this file's own _dispatch helper, which calls the handler
+    directly rather than through the SDK's request-dispatch loop) to prove
+    the reset is genuinely local to call_tool, not borrowed from that
+    isolation."""
+    import logging
+
+    from openproject_ce_mcp import http_request_counter, policy_observation
+
+    http_request_counter.increment()
+    http_request_counter.increment()
+    policy_observation.record_project_scope("OPM")
+    policy_observation.record_policy_decision("work_package_write_allowed")
+
+    with caplog.at_level(logging.WARNING, logger="openproject_ce_mcp.strict_mcpserver"):
+        await _dispatch(strict_mcp, "plain_tool", {"name": "World", "filters": ["x"]})
+
+    structured = [r.structured for r in caplog.records if hasattr(r, "structured")]
+    assert len(structured) == 1
+    assert structured[0]["http_requests"] == 0
+    assert structured[0]["project_scope"] is None
+    assert structured[0]["policy_decision"] is None
+
+
 async def test_nested_dict_argument_keys_not_rejected(strict_mcp: StrictMCPServer) -> None:
     """Top-level check only — dynamic inner keys of a dict[str, Any]-typed
     parameter (e.g. custom_fields) must pass through untouched."""

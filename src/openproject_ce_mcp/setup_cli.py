@@ -50,6 +50,7 @@ from openproject_ce_mcp.client import (
     TransportError,
 )
 from openproject_ce_mcp.config import ConfigError, Settings, tool_exposure_violations
+from openproject_ce_mcp.config import _parse_bool as _runtime_parse_bool
 
 # This file lives at src/openproject_ce_mcp/setup_cli.py inside a checkout. The
 # repo root (two levels up) then contains pyproject.toml and the source tree;
@@ -962,12 +963,21 @@ def _prompt_bool(label: str, default: bool = False) -> bool:
 
 
 def _bool_from_env(env: dict[str, str], key: str, fallback: bool = False) -> bool:
-    val = env.get(key, "").lower()
-    if val in ("true", "1", "yes"):
-        return True
-    if val in ("false", "0", "no"):
-        return False
-    return fallback
+    """Reads the SAME truthy/falsy vocabulary as runtime's _parse_bool (config.py) --
+    NOT a hand-maintained second one. A narrower wizard-only vocabulary previously
+    accepted only true/1/yes and false/0/no, silently treating a valid runtime value
+    like "off" as unrecognized and falling back to `fallback` instead. Since callers
+    pass `fallback=True` for several write flags (to default an unset flag's prompt
+    to on), a hand-edited ".mcp.json" with e.g. WORK_PACKAGE_WRITE=off would show the
+    wizard's re-run prompt defaulting to Enabled -- accepting it with a bare Enter
+    silently re-enabled writes the user had deliberately turned off. Delegating here
+    means any future runtime vocabulary change (config.py) can't drift out of sync
+    with what the wizard offers as a prefill default.
+    """
+    try:
+        return _runtime_parse_bool(env.get(key), key, default=fallback)
+    except ConfigError:
+        return fallback
 
 
 _WRITE_SCOPE_FLAG_KEYS = (

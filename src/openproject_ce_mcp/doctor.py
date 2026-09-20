@@ -98,10 +98,19 @@ def _run_doctor(
         return EXIT_FAILURE
 
 
+_MIN_PYTHON = (3, 11)  # pyproject.toml's own requires-python floor
+
+
 def _check_binary() -> bool:
     """Check binary path, package version, and Python runtime."""
     path = shutil.which("openproject-ce-mcp") or sys.argv[0]
     print(f"[OK] Binary: {path} (v{__version__})")
+    if sys.version_info[:2] < _MIN_PYTHON:
+        print(
+            f"[FAIL] Python: {platform.python_version()} ({sys.executable}) "
+            f"-- requires >= {'.'.join(map(str, _MIN_PYTHON))}"
+        )
+        return False
     print(f"[OK] Python: {platform.python_version()} ({sys.executable})")
     return True
 
