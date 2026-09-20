@@ -96,6 +96,38 @@ async def test_gather_in_current_context_returns_results_in_order() -> None:
 
 
 @pytest.mark.asyncio
+async def test_merge_waits_for_a_still_running_sibling_before_reraising() -> None:
+    """Regression (found by a Codex review, 2026-09): the earlier fix's own
+    test above (test_gather_in_current_context_merges_before_reraising_on_
+    exception) used two coroutines that both complete within the same event
+    loop tick, so it could not catch this -- asyncio.gather(...,
+    return_exceptions=False) propagates the FIRST sibling's exception
+    IMMEDIATELY, without waiting for a slower sibling still genuinely in
+    flight (a real `await` boundary away from its own write). The original
+    implementation merged ctx right there, silently dropping the slower
+    sibling's ContextVar write entirely -- not just delaying it, losing it
+    for good, since the sibling's Task kept running in the background after
+    the merge already happened and nothing ever read its later write back
+    out again."""
+    _var.set(0)
+
+    async def fails_immediately() -> None:
+        _var.set(_var.get() + 1)
+        raise ValueError("boom")
+
+    async def writes_after_a_real_delay() -> None:
+        await asyncio.sleep(0.05)
+        _var.set(_var.get() + 1)
+
+    with pytest.raises(ValueError, match="boom"):
+        await gather_in_current_context(fails_immediately(), writes_after_a_real_delay())
+
+    # Both writes must already be merged by the time the exception
+    # propagates -- not just eventually, after some later unrelated await.
+    assert _var.get() == 2
+
+
+@pytest.mark.asyncio
 async def test_concurrent_children_see_each_others_writes_consistently() -> None:
     """The shared context copy means concurrent children observe a single,
     consistent view among themselves -- not full isolation, matching

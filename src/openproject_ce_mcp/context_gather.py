@@ -69,5 +69,16 @@ async def gather_in_current_context(*coros: Awaitable[object], return_exceptions
     try:
         return await asyncio.gather(*tasks, return_exceptions=return_exceptions)
     finally:
+        # asyncio.gather(..., return_exceptions=False) propagates the FIRST
+        # sibling's exception immediately, without waiting for a slower
+        # sibling still in flight -- merging ctx right here (the original,
+        # buggy shape) would silently drop that slower sibling's ContextVar
+        # writes, since it hasn't run yet. A second gather (always with
+        # return_exceptions=True, so it can never itself raise or block
+        # forever) waits for every task to genuinely finish -- success,
+        # failure, or cancellation -- before the merge below runs. This is a
+        # cheap no-op for tasks that already completed by the time the first
+        # gather call above returned/raised.
+        await asyncio.gather(*tasks, return_exceptions=True)
         for var, value in ctx.items():
             var.set(value)

@@ -65,7 +65,7 @@ from typing import Any
 import pytest
 
 from openproject_ce_mcp import tools
-from openproject_ce_mcp.config import READ_SCOPE_ENV_VAR, Settings
+from openproject_ce_mcp.config import READ_SCOPE_ENV_VAR, WRITE_GROUP_REQUIREMENTS, Settings
 from openproject_ce_mcp.server import create_app
 
 # Mirrors config.py's own OPENPROJECT_ENABLE_<SCOPE>_WRITE naming convention
@@ -74,6 +74,18 @@ from openproject_ce_mcp.server import create_app
 _ALL_WRITE_SCOPES = frozenset(tools.WRITE_TOOLS_BY_SCOPE) | {"personal"}
 _WRITE_SCOPE_ENV_VAR: dict[str, str] = {
     scope: f"OPENPROJECT_ENABLE_{scope.upper()}_WRITE" for scope in _ALL_WRITE_SCOPES
+}
+
+# scope -> its paired read env var, per WRITE_GROUP_REQUIREMENTS -- the same
+# real invariant Settings.from_env enforces at startup (a write flag on
+# without its matching read flag is a ConfigError). Used below so every
+# write-scope tool's capability_env_vars records BOTH, not just the write
+# flag: if that from_env enforcement were ever weakened/removed,
+# enabled_tool_names() would still register the tool with read disabled
+# (it only checks write_enabled(scope) itself), a real capability-gate
+# regression this schema-drift gate must be able to catch.
+_WRITE_SCOPE_PAIRED_READ_ENV_VAR: dict[str, str] = {
+    write_key.removesuffix("_write"): read_env_var for write_key, _, _, read_env_var in WRITE_GROUP_REQUIREMENTS
 }
 
 
@@ -97,7 +109,11 @@ def _classify() -> dict[str, tuple[str, str, tuple[str, ...]]]:
             classification[name] = ("read", scope, (READ_SCOPE_ENV_VAR[scope],))
     for scope, names in tools.WRITE_TOOLS_BY_SCOPE.items():
         for name in names:
-            classification[name] = ("write", scope, (_WRITE_SCOPE_ENV_VAR[scope],))
+            classification[name] = (
+                "write",
+                scope,
+                (_WRITE_SCOPE_ENV_VAR[scope], _WRITE_SCOPE_PAIRED_READ_ENV_VAR[scope]),
+            )
     for name in tools.PERSONAL_MUTATION_TOOLS:
         classification[name] = (
             "write",
@@ -108,7 +124,11 @@ def _classify() -> dict[str, tuple[str, str, tuple[str, ...]]]:
         classification[name] = (
             "write",
             "work_package",
-            (_WRITE_SCOPE_ENV_VAR["work_package"], "OPENPROJECT_ATTACHMENT_ROOT"),
+            (
+                _WRITE_SCOPE_ENV_VAR["work_package"],
+                _WRITE_SCOPE_PAIRED_READ_ENV_VAR["work_package"],
+                "OPENPROJECT_ATTACHMENT_ROOT",
+            ),
         )
     for name, additional_scopes in tools.ADDITIONAL_READ_SCOPES_BY_TOOL.items():
         kind, scope, env_vars = classification[name]
@@ -188,7 +208,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "bulk_create_work_packages": {
         "description_hash": "8d50a3e3be2da65d6f694d5d2f57070b6865ef689065ec0c56562540847ac012",
@@ -210,7 +230,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "bulk_update_work_packages": {
         "description_hash": "b8a6a9fa15ed2805513b3515c1c0cf7a1c83e7788ffd13d2ad6ca2a088ca7d45",
@@ -232,7 +252,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "cancel_recurring_meeting_occurrence": {
         "description_hash": "80297fcd2c68f317d5487ab63ee869dbf92b71e7ae3f5e2ddb7c522ee136561b",
@@ -250,7 +270,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "meeting",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE", "OPENPROJECT_ENABLE_MEETING_READ"),
     },
     "copy_project": {
         "description_hash": "87f62e2006e78c3f3ad2f24169012e96627fab7231088200303cc905c093dad7",
@@ -283,7 +303,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "project",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE", "OPENPROJECT_ENABLE_PROJECT_READ"),
     },
     "create_board": {
         "description_hash": "7135762d0c1f79dcf94a7ab4f37ea117a884168895cee1511e69725fb05ac489",
@@ -343,7 +363,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "board",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_BOARD_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_BOARD_WRITE", "OPENPROJECT_ENABLE_BOARD_READ"),
     },
     "create_grid": {
         "description_hash": "96246e5c63693292e339c34b0c93ddb8ed9cef01d74410b35b4518fb799aa2bc",
@@ -367,7 +387,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "project",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE", "OPENPROJECT_ENABLE_PROJECT_READ"),
     },
     "create_group": {
         "description_hash": "a0dfd38457891fdceb730d654ff5bd6d292e9078c5ee9878c0fc95df8de6fbc2",
@@ -389,7 +409,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "admin",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE", "OPENPROJECT_ENABLE_ADMIN_READ"),
     },
     "create_meeting": {
         "description_hash": "300a863034d4f3a0f5d0e923b99d46f15587fbdd0ffeb6a7b2c932980457b7ec",
@@ -418,7 +438,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "meeting",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE", "OPENPROJECT_ENABLE_MEETING_READ"),
     },
     "create_meeting_agenda_item": {
         "description_hash": "3acbd8a5f62308ec63f0be4caa707c7cb0e1602fada34660b1a4ca6683fdceff",
@@ -453,7 +473,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "meeting",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE", "OPENPROJECT_ENABLE_MEETING_READ"),
     },
     "create_meeting_outcome": {
         "description_hash": "898ffa9196658bc91e79c5e73ece3c2bcabe96d6079f87e985f75fab369258fd",
@@ -477,7 +497,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "meeting",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE", "OPENPROJECT_ENABLE_MEETING_READ"),
     },
     "create_meeting_section": {
         "description_hash": "37656a5b2e098f7ca4c3129323c42d736006ee0e68fbc476322596bbce18a115",
@@ -497,7 +517,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "meeting",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE", "OPENPROJECT_ENABLE_MEETING_READ"),
     },
     "create_membership": {
         "description_hash": "7e16b4580a50fd39ef23238ec1af14eeae93f99c61361c40144fe2718f1811cd",
@@ -545,7 +565,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "project",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE", "OPENPROJECT_ENABLE_PROJECT_READ"),
     },
     "create_project": {
         "description_hash": "7bf66547bfca2ccaa5b1b0c0f4d9d093ec45d7488af18a74d1d2f276a771a0ed",
@@ -577,7 +597,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "project",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE", "OPENPROJECT_ENABLE_PROJECT_READ"),
     },
     "create_recurring_meeting": {
         "description_hash": "c000259df9edd401570ddc4ab9926dbe716917efc075441bcb59df168ce561ce",
@@ -620,7 +640,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "meeting",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE", "OPENPROJECT_ENABLE_MEETING_READ"),
     },
     "create_storage": {
         "description_hash": "cd146fd8757369750eb173290db0870709ddb56c81deb0dd2b75b0d6fd1eabf7",
@@ -646,7 +666,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "admin",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE", "OPENPROJECT_ENABLE_ADMIN_READ"),
     },
     "create_subtask": {
         "description_hash": "b28d2b2dd93791e8e59a895ddcec4c2bdc33b329d50de2ecf251f94ff8c9550a",
@@ -699,7 +719,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "create_time_entry": {
         "description_hash": "cb7d094a4d57bce51be6e51fd25b0ca5ce8edb7e0a1f50adb78ddc03d52a8934",
@@ -728,7 +748,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "create_time_entry_until": {
         "description_hash": "cef14465b5cd8dc9104c3258f4d249a635585ed60dbd9dcb4a617346c3212d92",
@@ -756,7 +776,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "create_user": {
         "description_hash": "53dc63ce8b0aeb0c08a8626fa4dde65342a896bcc7bc01ca5166ab705727b9b5",
@@ -780,7 +800,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "admin",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE", "OPENPROJECT_ENABLE_ADMIN_READ"),
     },
     "create_user_non_working_time": {
         "description_hash": "6d3e6785338c17c49023a78be8243012e15df84f17056bbb40e6edb5e83c6538",
@@ -799,7 +819,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "user_schedule",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_USER_SCHEDULE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_USER_SCHEDULE_WRITE", "OPENPROJECT_ENABLE_USER_SCHEDULE_READ"),
     },
     "create_user_working_hours": {
         "description_hash": "c3699f8e1c3f4afe4ce3e37c90032e3f26674219e48bb9349723f8e58ee590fd",
@@ -857,7 +877,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "user_schedule",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_USER_SCHEDULE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_USER_SCHEDULE_WRITE", "OPENPROJECT_ENABLE_USER_SCHEDULE_READ"),
     },
     "create_version": {
         "description_hash": "91f57521a717a5716a7bbde090ac3101362bb6776358178f06e360f58ffc5fd6",
@@ -884,7 +904,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "version",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_VERSION_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_VERSION_WRITE", "OPENPROJECT_ENABLE_VERSION_READ"),
     },
     "create_work_package": {
         "description_hash": "589b6fcb9debc624ee79e016fd078f4b8d784c87ea78ff824a65777757de86ce",
@@ -946,7 +966,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "create_work_package_attachment": {
         "description_hash": "eb59309b834553512ac4510bf7b50608b706f32ec3f0c27700d410f683c5fbd7",
@@ -969,7 +989,11 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ATTACHMENT_ROOT"),
+        "capability_env_vars": (
+            "OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",
+            "OPENPROJECT_ENABLE_WORK_PACKAGE_READ",
+            "OPENPROJECT_ATTACHMENT_ROOT",
+        ),
     },
     "create_work_package_relation": {
         "description_hash": "08ec621131fc210c11c4a2a53343f414b7316804154878131cfc108afed5bba4",
@@ -997,7 +1021,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "create_work_package_reminder": {
         "description_hash": "56e732d5fec9df95c070010f45a27499850e3b8b461367782bf6dd9370d3d234",
@@ -1016,7 +1040,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "create_work_package_wiki_link": {
         "description_hash": "7c6ffb99702215614bb6c0ae8a22038765ce41b0a32191f06506ad79b702b5ac",
@@ -1035,7 +1059,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "delete_attachment": {
         "description_hash": "c45629222085b064a53d91e018569e122d831aaab90a0ad8ccacd6df2a0567d1",
@@ -1052,7 +1076,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "delete_board": {
         "description_hash": "54f1fc77458ae89e2c1c6e35551a29313ffbe15118e4b98de3dfd67456fd55bf",
@@ -1069,7 +1093,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "board",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_BOARD_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_BOARD_WRITE", "OPENPROJECT_ENABLE_BOARD_READ"),
     },
     "delete_file_link": {
         "description_hash": "82e98fc5644c8cf4d3438992f757ee7ec86731164745735d98766b3515e80ab2",
@@ -1141,7 +1165,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "project",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE", "OPENPROJECT_ENABLE_PROJECT_READ"),
     },
     "delete_group": {
         "description_hash": "2dbc0572c04a32100b57f46f2dbaedf5aa04a0df4adaf3e77d50d68bf97e42e2",
@@ -1158,7 +1182,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "admin",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE", "OPENPROJECT_ENABLE_ADMIN_READ"),
     },
     "delete_meeting": {
         "description_hash": "5fad75d285222112baeec9e8bd997ce8c9a246ef9e60114e287fd5bfd8e4feff",
@@ -1175,7 +1199,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "meeting",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE", "OPENPROJECT_ENABLE_MEETING_READ"),
     },
     "delete_meeting_agenda_item": {
         "description_hash": "e720f38aba0b014df5bf1b4e0feb00a1da1c2aaa5f625fa432d60cb175479e4c",
@@ -1192,7 +1216,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "meeting",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE", "OPENPROJECT_ENABLE_MEETING_READ"),
     },
     "delete_meeting_outcome": {
         "description_hash": "6d47daa4e97b0ac6991703d3b0a6817294a1daf34f35a765b711c14b39d3a97f",
@@ -1209,7 +1233,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "meeting",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE", "OPENPROJECT_ENABLE_MEETING_READ"),
     },
     "delete_meeting_section": {
         "description_hash": "923761219593ed4e874043f680d4e53d0258560179c6fffdb7734f3ac4c665d6",
@@ -1226,7 +1250,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "meeting",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE", "OPENPROJECT_ENABLE_MEETING_READ"),
     },
     "delete_membership": {
         "description_hash": "e51ba36916e98a2887ef72c02d4d8bd7a5622ba2e5e461ba2adfe8f8e68c7138",
@@ -1243,7 +1267,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "membership",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_MEMBERSHIP_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEMBERSHIP_WRITE", "OPENPROJECT_ENABLE_MEMBERSHIP_READ"),
     },
     "delete_news": {
         "description_hash": "97c6a6726442ad973d0b8fb7614bedf924810f8f10fdf70d003d8d3abc376841",
@@ -1260,7 +1284,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "project",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE", "OPENPROJECT_ENABLE_PROJECT_READ"),
     },
     "delete_project": {
         "description_hash": "08b0389aa495e2849eff6da31502e15bad06733144dfcd8101c7fea9f67122f2",
@@ -1277,7 +1301,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "project",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE", "OPENPROJECT_ENABLE_PROJECT_READ"),
     },
     "delete_recurring_meeting": {
         "description_hash": "f9f31159fedd5cc350fdea0a5c085c6b7471aaa47bf63de40fcf9218312ef1a8",
@@ -1294,7 +1318,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "meeting",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE", "OPENPROJECT_ENABLE_MEETING_READ"),
     },
     "delete_relation": {
         "description_hash": "30c1ec2a0768849345524bf7def212f9b31097bde89fc24ae08f4284c261b78e",
@@ -1311,7 +1335,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "delete_reminder": {
         "description_hash": "ccdc9d0edef4eefabf25aa78d1d4142d656a2e79d44d85b14815b17334f45b7b",
@@ -1328,7 +1352,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "delete_storage": {
         "description_hash": "d0cf54241ff0840eeab1c1fd5c9dc04b22980fa7caac9ecf712f77a2f0f22093",
@@ -1345,7 +1369,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "admin",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE", "OPENPROJECT_ENABLE_ADMIN_READ"),
     },
     "delete_time_entry": {
         "description_hash": "6f81471e231bf8ee0c563f65caa0b17272e316ab9edd3ed22d2b9f2b9f049ead",
@@ -1362,7 +1386,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "delete_user": {
         "description_hash": "53022b33034eee8aa6368f272b408eca6da497b63fb2913c6e3e3fcf1f894159",
@@ -1379,7 +1403,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "admin",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE", "OPENPROJECT_ENABLE_ADMIN_READ"),
     },
     "delete_user_non_working_time": {
         "description_hash": "6f954170770ccef383c8d9bfe21d98517c91ce2265119d6608f7df414eab4770",
@@ -1397,7 +1421,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "user_schedule",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_USER_SCHEDULE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_USER_SCHEDULE_WRITE", "OPENPROJECT_ENABLE_USER_SCHEDULE_READ"),
     },
     "delete_user_working_hours": {
         "description_hash": "809d94bc9bad678189cbdafea84dc87eb645f0baa95f5773205d579d553b3246",
@@ -1415,7 +1439,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "user_schedule",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_USER_SCHEDULE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_USER_SCHEDULE_WRITE", "OPENPROJECT_ENABLE_USER_SCHEDULE_READ"),
     },
     "delete_version": {
         "description_hash": "271b2a18022f0298af06869e2c7b7330af1ed295ce404b9925c94064c79935f5",
@@ -1432,7 +1456,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "version",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_VERSION_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_VERSION_WRITE", "OPENPROJECT_ENABLE_VERSION_READ"),
     },
     "delete_work_package": {
         "description_hash": "4de0687d45daa1252134abc27ea65a553bc9d1e632cf4bf6f58854ad84188103",
@@ -1449,7 +1473,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "delete_work_package_wiki_link": {
         "description_hash": "3d1a4e1c09e1796938e9c72568303b41097f58570845fa9d468e6d00f9f6aa20",
@@ -1467,7 +1491,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "execute_query": {
         "description_hash": "cc0736466c7997ecdd03ec642bb5afe4273e4c9373df202ec03307baf380eee6",
@@ -3934,7 +3958,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "meeting",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE", "OPENPROJECT_ENABLE_MEETING_READ"),
     },
     "list_actions": {
         "description_hash": "d359cbfe46feabedd30f76859dd6d688a0190fcd18cdd586302bc57e13214e0b",
@@ -5211,7 +5235,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         },
         "classification": "write",
         "scope": "project",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE", "OPENPROJECT_ENABLE_PROJECT_READ"),
     },
     "set_user_locked": {
         "description_hash": "a0bdd427d809f4076aafdc1790a08d0c387668fa91ee1a5e5fcc3c80234de7bf",
@@ -5229,7 +5253,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "admin",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE", "OPENPROJECT_ENABLE_ADMIN_READ"),
     },
     "set_work_package_watcher": {
         "description_hash": "3c33c29b7adf755375d8b5536e1e7864d5abf71dd1bf3a3c9ab92f4047070ceb",
@@ -5283,7 +5307,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         },
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "toggle_activity_emoji_reaction": {
         "description_hash": "71d4b64028ebdcc8466472cd710f113f7edbc6d5505387d09d38d2d9eb8a9b11",
@@ -5340,7 +5364,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         },
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "update_board": {
         "description_hash": "84c9683b1170cd23245d80fddb9b762fbb29cf592224d26988885c9217ed95d5",
@@ -5401,7 +5425,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "board",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_BOARD_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_BOARD_WRITE", "OPENPROJECT_ENABLE_BOARD_READ"),
     },
     "update_document": {
         "description_hash": "1102f06cc228d67979bb21add1bf2a6aeb421eb760e5669ee4c688d189db38bc",
@@ -5424,7 +5448,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "project",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE", "OPENPROJECT_ENABLE_PROJECT_READ"),
     },
     "update_grid": {
         "description_hash": "62961e196ef0349a1653d88afb61ad679f07b4a151e33ee28d3e3d9148e4436f",
@@ -5448,7 +5472,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "project",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE", "OPENPROJECT_ENABLE_PROJECT_READ"),
     },
     "update_group": {
         "description_hash": "dce52876f0b926e3b4a3e4f167073fcbca9a70e23d2263cca7fcb1b55b54aa41",
@@ -5476,7 +5500,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "admin",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE", "OPENPROJECT_ENABLE_ADMIN_READ"),
     },
     "update_meeting": {
         "description_hash": "fcf892f5e27672c487b7ec04957e3bb4ae0b1e6b3e819d11312239abbbcd2e2a",
@@ -5510,7 +5534,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "meeting",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE", "OPENPROJECT_ENABLE_MEETING_READ"),
     },
     "update_meeting_agenda_item": {
         "description_hash": "37908fb5909d3686c5bd37773763a95a22ff876e174cd6b8250f1a4bc4bc02cf",
@@ -5545,7 +5569,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "meeting",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE", "OPENPROJECT_ENABLE_MEETING_READ"),
     },
     "update_meeting_outcome": {
         "description_hash": "6fcbb2c2aeeee53874c3402f3a3ceb374bc86b14eb2d4ec9b7782da97f30750a",
@@ -5569,7 +5593,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "meeting",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE", "OPENPROJECT_ENABLE_MEETING_READ"),
     },
     "update_meeting_section": {
         "description_hash": "2e81f5997a4d1ebecb6510f96312ddf81d5410e49de3640b63c6869d05025547",
@@ -5588,7 +5612,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "meeting",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE", "OPENPROJECT_ENABLE_MEETING_READ"),
     },
     "update_membership": {
         "description_hash": "f2d14bc8ea90ac5bad2933319081afdc3c7320514adc5c538fe87a98a930a23d",
@@ -5666,7 +5690,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "project",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE", "OPENPROJECT_ENABLE_PROJECT_READ"),
     },
     "update_project": {
         "description_hash": "c92511efc652b34be9bf2e708abbb087a5cbe6c49344b038562943d96809bac5",
@@ -5699,7 +5723,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "project",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_WRITE", "OPENPROJECT_ENABLE_PROJECT_READ"),
     },
     "update_recurring_meeting": {
         "description_hash": "a83e4b4c73e5db2a7a3dac501ddef2575db60bacab8b8c2e0e9484bbd7340733",
@@ -5727,7 +5751,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "meeting",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE", "OPENPROJECT_ENABLE_MEETING_READ"),
     },
     "update_relation": {
         "description_hash": "2345316bc63f56a2a900bdc5355d6255d7088fbcefa50161c823e9da5f32c924",
@@ -5754,7 +5778,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "update_reminder": {
         "description_hash": "fac664c650f19cfe1fb9effc7219cdbadd4a9a8ddb64982c6ec0055a3ebef643",
@@ -5773,7 +5797,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "update_storage": {
         "description_hash": "a6f40d728875a9ac87326a5b4d16fb1676d6d59fece43c18927a89000050c203",
@@ -5792,7 +5816,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "admin",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE", "OPENPROJECT_ENABLE_ADMIN_READ"),
     },
     "update_time_entry": {
         "description_hash": "18122ed32c164ce29392647a97c80a091aeb499d2e201eed75d2eb978a138ca1",
@@ -5816,7 +5840,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "update_time_entry_until": {
         "description_hash": "16d873e72193051b1b742cc197bbece7270a27a47e11e3d0b6bc15b5916500e4",
@@ -5839,7 +5863,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "update_user": {
         "description_hash": "b6807dd0164766336b973b4438d132da12e54d166ab40e63e6302ce06e8fb6a3",
@@ -5862,7 +5886,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "admin",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE", "OPENPROJECT_ENABLE_ADMIN_READ"),
     },
     "update_user_non_working_time": {
         "description_hash": "7820c6c0c86f62b3662a6b03d87945b13a37d2b4391239ebcb8a8cbe6d0a221c",
@@ -5882,7 +5906,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "user_schedule",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_USER_SCHEDULE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_USER_SCHEDULE_WRITE", "OPENPROJECT_ENABLE_USER_SCHEDULE_READ"),
     },
     "update_user_working_hours": {
         "description_hash": "7558a0eb746392a89e3a05d4db5f463c2cc4b581124ece22a5d064017126821f",
@@ -5941,7 +5965,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "user_schedule",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_USER_SCHEDULE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_USER_SCHEDULE_WRITE", "OPENPROJECT_ENABLE_USER_SCHEDULE_READ"),
     },
     "update_version": {
         "description_hash": "416d3b88e09e595e943973e347b96b2aa64cbed8e5de122ec7ebc049456f1972",
@@ -5968,7 +5992,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "version",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_VERSION_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_VERSION_WRITE", "OPENPROJECT_ENABLE_VERSION_READ"),
     },
     "update_work_package": {
         "description_hash": "47693d109e614b94d28ad97e7cf68d16e062bd4bf5da4df4126c9eea90c31d82",
@@ -6037,7 +6061,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
 }
 
