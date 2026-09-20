@@ -328,6 +328,19 @@ def _categorize_tool_errors(fn):
         try:
             result = await fn(*args, **kwargs)
         except ValueError as exc:
+            # A ValueError already coded by _run_tool via
+            # _categorize_openproject_error (e.g. InvalidInputError, whose
+            # real layer is "http_mapper", not "validation") carries real
+            # .code/.layer attributes and must keep them, not have them
+            # overwritten with the generic tool-body-validator classification
+            # -- same reasoning as the RuntimeError branch below. A bare
+            # ValueError raised directly by a tool-body validator (no such
+            # attributes) is the actual "validation" case.
+            if hasattr(exc, "code") and hasattr(exc, "layer"):
+                error_code = exc.code  # type: ignore[attr-defined]
+                layer = exc.layer  # type: ignore[attr-defined]
+                _emit_tool_call_log(fn.__name__, "error", start, error_code, layer, request_id, LOGGER.warning)
+                raise
             error_code, layer = "VALIDATION_FAILED", "validation"
             _emit_tool_call_log(fn.__name__, "error", start, error_code, layer, request_id, LOGGER.warning)
             raise ValueError(_prefix("VALIDATION_FAILED", str(exc))) from exc

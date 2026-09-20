@@ -50,11 +50,13 @@ development baseline.
 - Optional structured stderr logging of per-tool-call diagnostics
   (`OPENPROJECT_LOG_FORMAT=json`), one JSON line per call carrying the tool
   name, outcome, duration, error code/layer, HTTP request count (accurate
-  across retries), project scope, policy decision, and MCP request ID.
-  Written to stderr only, never stdout, which stays reserved for MCP
-  JSON-RPC traffic. Off by default (`text` format, unchanged output); never
-  logs the API token, Authorization header, work-package bodies,
-  attachments, or other request/response payload content.
+  across retries), project scope, policy decision, and MCP request ID. A
+  successful call logs at `INFO`; set `OPENPROJECT_LOG_LEVEL=INFO` too (the
+  default is `WARNING`) to see those lines, not just failures. Written to
+  stderr only, never stdout, which stays reserved for MCP JSON-RPC traffic.
+  Off by default (`text` format, unchanged output); never logs the API
+  token, Authorization header, work-package bodies, attachments, or other
+  request/response payload content.
 
 ### Changed
 

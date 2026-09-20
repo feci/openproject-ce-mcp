@@ -170,6 +170,7 @@ defense in depth.
 | `OPENPROJECT_RETRY_BASE_DELAY` | no | `1.0` | Initial retry delay in seconds |
 | `OPENPROJECT_RETRY_MAX_DELAY` | no | `60.0` | Maximum retry delay in seconds; must be ≥ `OPENPROJECT_RETRY_BASE_DELAY` |
 | `OPENPROJECT_LOG_LEVEL` | no | `WARNING` | `CRITICAL`, `ERROR`, `WARNING`, or `INFO` |
+| `OPENPROJECT_LOG_FORMAT` | no | `text` | `text` or `json`. `json` emits one structured line per tool call (tool, outcome, duration, error code/layer, HTTP request count, project scope, policy decision, request ID) to stderr. A successful call logs at `INFO` — set `OPENPROJECT_LOG_LEVEL=INFO` too, or only failed calls appear. |
 
 Invalid combinations (e.g. `MAX_RETRIES` above 10, `DEFAULT_PAGE_SIZE` above
 `MAX_PAGE_SIZE`) fail at startup with a clear error rather than being silently

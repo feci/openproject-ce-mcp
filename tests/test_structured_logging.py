@@ -136,6 +136,33 @@ async def test_error_family_logs_its_own_code_and_layer(
     assert record["request_id"] == "req-2"
 
 
+@pytest.mark.asyncio
+async def test_coded_value_error_from_run_tool_keeps_its_real_layer(caplog: pytest.LogCaptureFixture) -> None:
+    """Regression: a ValueError produced by _run_tool's own
+    _categorize_openproject_error (e.g. translating an InvalidInputError,
+    whose real layer is "http_mapper") reaches this wrapper's `except
+    ValueError` branch as an already-coded exception -- it must keep its
+    real .code/.layer, not have them overwritten with the generic
+    "validation" layer reserved for a bare ValueError a tool body raises
+    directly (the `id="invalid-input"` case in _ERROR_FAMILY_CASES above
+    tests a DIFFERENT path: raising InvalidInputError itself, an
+    OpenProjectError, not a ValueError already translated by _run_tool)."""
+    from openproject_ce_mcp.client import InvalidInputError
+    from openproject_ce_mcp.tools_runtime import _categorize_openproject_error
+
+    @_categorize_tool_errors
+    async def coded_value_error_tool(_ctx) -> str:
+        raise _categorize_openproject_error(InvalidInputError("bad field"))
+
+    with caplog.at_level(logging.WARNING, logger=LOGGER.name):
+        with pytest.raises(ValueError, match=r"^\[VALIDATION_FAILED\] bad field$"):
+            await coded_value_error_tool(_FakeCtx("req-11"))
+
+    [record] = _structured_records(caplog)
+    assert record["error_code"] == "VALIDATION_FAILED"
+    assert record["layer"] == "http_mapper"
+
+
 def test_json_formatter_includes_traceback_for_logger_exception_calls(caplog: pytest.LogCaptureFixture) -> None:
     """The INTERNAL_ERROR sanitization backstop's LOGGER.exception(...) call
     is the one place the real stack trace survives (the client-facing error
