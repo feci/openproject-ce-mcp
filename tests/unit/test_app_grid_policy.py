@@ -5,6 +5,7 @@ import dataclasses
 import pytest
 from _client_test_helpers import make_settings
 
+from openproject_ce_mcp import policy_observation
 from openproject_ce_mcp.app.errors import ProjectScopeDeniedError
 from openproject_ce_mcp.app.policies.grid_policy import (
     ensure_grid_read_allowed,
@@ -49,6 +50,19 @@ def test_ensure_grid_write_allowed_denies_missing_scope_when_restrictive() -> No
     settings = dataclasses.replace(make_settings(), read_projects=("*",), write_projects=("other",))
     with pytest.raises(ProjectScopeDeniedError, match="OPENPROJECT_WRITE_PROJECTS"):
         ensure_grid_write_allowed(None, settings=settings, project_id_to_identifier={})
+
+
+def test_ensure_grid_write_allowed_records_policy_decision_for_missing_scope() -> None:
+    """Regression: the `if not scope_href:` fail-closed branch raised
+    ProjectScopeDeniedError directly, without recording policy_observation
+    -- the structured log's policy_decision field stayed at whatever an
+    unrelated earlier check had last set."""
+    settings = dataclasses.replace(make_settings(), read_projects=("*",), write_projects=("other",))
+    policy_observation.reset()
+    with pytest.raises(ProjectScopeDeniedError):
+        ensure_grid_write_allowed(None, settings=settings, project_id_to_identifier={})
+    assert policy_observation.current_policy_decision() == "project_scope_write_denied"
+    assert policy_observation.current_project_scope() is None
 
 
 def test_ensure_grid_write_allowed_denies_project_scope_outside_write_allowlist() -> None:

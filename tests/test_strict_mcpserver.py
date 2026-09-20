@@ -114,6 +114,69 @@ async def test_unknown_tool_name_keeps_standard_error(strict_mcp: StrictMCPServe
     assert "Unknown tool" in _text(result)
 
 
+async def test_missing_required_argument_is_sanitized_and_logged(
+    strict_mcp: StrictMCPServer, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Regression: a MISSING required argument has no unknown key for the
+    class docstring's explicit check to catch -- it reaches the SDK's own
+    pydantic argument-model validation inside `super().call_tool()`, which
+    used to surface as an uncoded `ToolError("Error executing tool ...")`
+    (no [VALIDATION_FAILED] prefix, raw pydantic error text including a
+    docs.pydantic.dev URL) with no structured log entry at all, since this
+    dispatch-level failure point is upstream of `_categorize_tool_errors`
+    (which only runs inside a tool's own handler body)."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="openproject_ce_mcp.strict_mcpserver"):
+        result = await _dispatch(strict_mcp, "plain_tool", {})
+    assert result.is_error is True
+    text = _text(result)
+    assert "[VALIDATION_FAILED]" in text
+    assert "pydantic.dev" not in text
+    structured = [r.structured for r in caplog.records if hasattr(r, "structured")]
+    assert len(structured) == 1
+    assert structured[0]["tool"] == "plain_tool"
+    assert structured[0]["status"] == "error"
+    assert structured[0]["error_code"] == "VALIDATION_FAILED"
+
+
+async def test_wrong_typed_argument_is_sanitized_and_logged(
+    strict_mcp: StrictMCPServer, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Same dispatch-level gap as the missing-argument case above, but for a
+    present argument with the wrong type (int where a str is required) --
+    the offending value itself must never appear in the sanitized message,
+    since it could carry caller-supplied data."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="openproject_ce_mcp.strict_mcpserver"):
+        result = await _dispatch(strict_mcp, "plain_tool", {"name": 12345})
+    assert result.is_error is True
+    text = _text(result)
+    assert "[VALIDATION_FAILED]" in text
+    assert "12345" not in text
+    structured = [r.structured for r in caplog.records if hasattr(r, "structured")]
+    assert len(structured) == 1
+    assert structured[0]["error_code"] == "VALIDATION_FAILED"
+
+
+async def test_unknown_argument_dispatch_failure_is_also_logged(
+    strict_mcp: StrictMCPServer, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The pre-existing unknown-argument rejection path (class docstring's
+    original bug fix) previously produced a correctly-coded error message
+    but, like the pydantic-validation cases above, emitted no structured
+    log entry at all."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="openproject_ce_mcp.strict_mcpserver"):
+        await _dispatch(strict_mcp, "plain_tool", {"name": "World", "filters": ["x"]})
+    structured = [r.structured for r in caplog.records if hasattr(r, "structured")]
+    assert len(structured) == 1
+    assert structured[0]["tool"] == "plain_tool"
+    assert structured[0]["error_code"] == "VALIDATION_FAILED"
+
+
 async def test_nested_dict_argument_keys_not_rejected(strict_mcp: StrictMCPServer) -> None:
     """Top-level check only — dynamic inner keys of a dict[str, Any]-typed
     parameter (e.g. custom_fields) must pass through untouched."""

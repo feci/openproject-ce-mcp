@@ -6,6 +6,7 @@ import dataclasses
 import pytest
 from _client_test_helpers import make_settings
 
+from openproject_ce_mcp import policy_observation
 from openproject_ce_mcp.app.errors import (
     InvalidInputError,
     NotFoundError,
@@ -457,6 +458,23 @@ async def test_list_checks_read_enabled_before_any_resolution_or_request() -> No
     with pytest.raises(PermissionDeniedError):
         await service.list(project="demo")
 
+    assert api.list_calls == []
+
+
+@pytest.mark.asyncio
+async def test_list_without_project_records_policy_decision_when_no_project_readable() -> None:
+    """Regression: with no `project` filter, a non-wildcard read_projects
+    scope, and an empty project_id_to_identifier (nothing readable at all),
+    this fail-closed branch raised ProjectScopeDeniedError directly without
+    recording policy_observation."""
+    settings = dataclasses.replace(make_settings(), read_projects=("some-other-project",))
+    service, api = _service(settings=settings, project_id_to_identifier={})
+
+    policy_observation.reset()
+    with pytest.raises(ProjectScopeDeniedError):
+        await service.list()
+    assert policy_observation.current_policy_decision() == "project_scope_read_denied"
+    assert policy_observation.current_project_scope() is None
     assert api.list_calls == []
 
 

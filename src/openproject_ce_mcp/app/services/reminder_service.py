@@ -35,6 +35,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ... import policy_observation
 from ...config import Settings
 from ...models import ReminderListResult, ReminderSummary, ReminderWriteResult
 from ..errors import InvalidInputError, ProjectScopeDeniedError
@@ -189,10 +190,15 @@ class ReminderService:
         remindable = await self._api.get_remindable_link(reminder_id)
         href = remindable.get("href") if isinstance(remindable, dict) else None
         if not isinstance(href, str) or not href:
+            policy_observation.record_project_scope(None)
+            policy_observation.record_policy_decision("project_scope_write_denied")
             raise ProjectScopeDeniedError(
                 "OpenProject writes to this reminder are disabled by OPENPROJECT_WRITE_PROJECTS."
             )
         work_package = await self._work_package_lookup_api.get_by_href(href)
+        # Delegates to the already-instrumented ensure_project_write_link_allowed
+        # (its own @_observe_project_scope_check decorator records
+        # project_scope/policy_decision) -- no separate recording needed here.
         scope_policy.ensure_project_write_link_allowed(
             work_package.get("_links", {}).get("project"),
             settings=self._settings,

@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from typing import Any
 
+import pydantic
 from mcp import types
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import Icon, ToolAnnotations
+
+from . import http_request_counter, policy_observation
+from .logging_support import ToolCallLogRecord
 
 logger = logging.getLogger(__name__)
 
@@ -36,17 +42,79 @@ class StrictMCPServer(MCPServer):
     async def call_tool(
         self, name: str, arguments: dict[str, Any], context: Any | None = None
     ) -> types.CallToolResult | types.InputRequiredResult:
+        """Two distinct schema-validation failure points share one
+        [VALIDATION_FAILED]-coded, structured-logged outcome here, since
+        neither ever reaches `_categorize_tool_errors` (that wrapper only
+        runs INSIDE a tool's own handler body, once dispatch has already
+        succeeded):
+
+        1. An unknown top-level argument key -- caught explicitly below,
+           before pydantic ever sees it (see class docstring).
+        2. A MISSING required argument, or one with the WRONG TYPE -- these
+           have no unknown key to catch; they reach `super().call_tool()`
+           and fail inside the SDK's own pydantic argument-model validation,
+           which the SDK wraps in a generic `ToolError("Error executing
+           tool ...")` with no `[VALIDATION_FAILED]` prefix and no
+           structured log entry. Unwrapped here via `ToolError.__cause__`
+           (a real `pydantic.ValidationError`) into the same coded,
+           structured-logged form as case 1 -- using `.errors()`'s field
+           path and error type only, never `error["input"]` (the offending
+           value itself), which could carry caller-supplied data (a token,
+           a work-package body fragment) that must never reach a raw,
+           unsanitized error message.
+        """
+        start = time.monotonic()
+        # Context.request_id is a property that raises ValueError (not
+        # AttributeError) when the Context wraps no real request_context
+        # (e.g. a test driving dispatch directly without the SDK's normal
+        # request-handling machinery around it) -- plain getattr() does not
+        # catch that, so a broken request_id lookup would otherwise mask
+        # the real [VALIDATION_FAILED] error entirely, same class of bug as
+        # tools_runtime.py's own _emit_tool_call_log exception-safety fix.
+        try:
+            request_id = context.request_id if context is not None else None
+        except Exception:
+            request_id = None
         tool = self._tool_manager.get_tool(name)
         if tool is not None:
             allowed = set(tool.parameters.get("properties", {}).keys())
             unknown = sorted(set(arguments.keys()) - allowed)
             if unknown:
-                raise ValueError(
+                message = (
                     f"[VALIDATION_FAILED] Unknown argument(s) for tool "
                     f"'{name}': {', '.join(unknown)}. "
                     f"Allowed arguments: {', '.join(sorted(allowed))}"
                 )
-        return await super().call_tool(name, arguments, context)
+                self._emit_dispatch_validation_log(name, start, request_id)
+                raise ValueError(message)
+        try:
+            return await super().call_tool(name, arguments, context)
+        except ToolError as exc:
+            if isinstance(exc.__cause__, pydantic.ValidationError):
+                self._emit_dispatch_validation_log(name, start, request_id)
+                field_errors = "; ".join(
+                    f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}" for err in exc.__cause__.errors()
+                )
+                raise ValueError(f"[VALIDATION_FAILED] Invalid argument(s) for tool '{name}': {field_errors}") from exc
+            raise
+
+    @staticmethod
+    def _emit_dispatch_validation_log(tool: str, start: float, request_id: Any) -> None:
+        try:
+            record: ToolCallLogRecord = {
+                "tool": tool,
+                "status": "error",
+                "duration_ms": int((time.monotonic() - start) * 1000),
+                "error_code": "VALIDATION_FAILED",
+                "layer": "validation",
+                "http_requests": http_request_counter.current(),
+                "project_scope": policy_observation.current_project_scope(),
+                "policy_decision": policy_observation.current_policy_decision(),
+                "request_id": str(request_id) if request_id is not None else None,
+            }
+            logger.warning("tool_call", extra={"structured": record})
+        except Exception:
+            logger.exception("Failed to emit structured tool-call log for %s", tool)
 
     def add_tool(
         self,

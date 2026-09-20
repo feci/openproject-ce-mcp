@@ -24,9 +24,21 @@ from __future__ import annotations
 
 from typing import Any
 
+from ... import policy_observation
 from ...config import Settings
 from ..errors import ProjectScopeDeniedError
 from . import scope
+
+
+def _payload_display_value(payload: dict[str, Any]) -> str | None:
+    """Mirrors scope.py's `_project_scope_display`/project_policy.py's
+    `_display_value` for this module's embedded-payload branch -- prefers a
+    known identifier over a bare numeric id."""
+    identifier_value = payload.get("identifier")
+    if identifier_value:
+        return str(identifier_value)
+    project_id = payload.get("id")
+    return str(project_id) if project_id is not None else None
 
 
 def ensure_backlog_bucket_workspace_allowed(
@@ -37,16 +49,24 @@ def ensure_backlog_bucket_workspace_allowed(
     project_id_to_identifier: dict[int, str],
 ) -> None:
     if defining_workspace_payload is not None:
+        policy_observation.record_project_scope(_payload_display_value(defining_workspace_payload))
         if scope.scope_allows_all(settings.read_projects):
+            policy_observation.record_policy_decision("project_scope_read_allowed")
             return
         candidates = scope.project_candidates(
             project_id_to_identifier=project_id_to_identifier, payload=defining_workspace_payload
         )
         if not scope.scope_matches_candidates(settings.read_projects, candidates):
+            policy_observation.record_policy_decision("project_scope_read_denied")
             raise ProjectScopeDeniedError(
                 "OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS."
             )
+        policy_observation.record_policy_decision("project_scope_read_allowed")
         return
+    # The link branch delegates to the already-instrumented
+    # scope.ensure_project_link_allowed (its own @_observe_project_scope_check
+    # decorator records project_scope/policy_decision) -- no separate
+    # recording needed here.
     scope.ensure_project_link_allowed(
         defining_workspace_link, settings=settings, project_id_to_identifier=project_id_to_identifier
     )

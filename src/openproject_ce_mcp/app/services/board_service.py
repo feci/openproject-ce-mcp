@@ -50,6 +50,7 @@ import builtins
 from typing import Any
 from urllib.parse import urlparse
 
+from ... import policy_observation
 from ...config import Settings
 from ...models import BoardDetail, BoardListResult, BoardWriteResult
 from ..api_href import api_href as _api_href
@@ -223,6 +224,12 @@ class BoardService:
             scope_policy.scope_allows_all(self._settings.read_projects)
             and scope_policy.scope_allows_all(self._settings.write_projects)
         ):
+            # No single project targeted -- project_scope stays None (no one
+            # project is "the" denial target), but policy_decision must still
+            # reflect the real outcome rather than staying at whatever an
+            # unrelated earlier check on this call last set it to.
+            policy_observation.record_project_scope(None)
+            policy_observation.record_policy_decision("project_scope_write_denied")
             raise ProjectScopeDeniedError(
                 "Project-scoped board writes require a project unless both OPENPROJECT_READ_PROJECTS and "
                 "OPENPROJECT_WRITE_PROJECTS are '*'."

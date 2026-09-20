@@ -5,6 +5,7 @@ import dataclasses
 import pytest
 from _client_test_helpers import make_settings
 
+from openproject_ce_mcp import policy_observation
 from openproject_ce_mcp.app.errors import InvalidInputError, PermissionDeniedError, ProjectScopeDeniedError
 from openproject_ce_mcp.app.ports.reminder_api import ReminderRecord
 from openproject_ce_mcp.app.services.reminder_service import ReminderService
@@ -428,6 +429,22 @@ async def test_delete_denies_malformed_remindable_link_even_under_open_scope() -
 
     with pytest.raises(ProjectScopeDeniedError, match="OPENPROJECT_WRITE_PROJECTS"):
         await service.delete(reminder_id=7, confirm=True)
+
+
+@pytest.mark.asyncio
+async def test_update_records_policy_decision_for_malformed_remindable_link() -> None:
+    """Regression: the unresolvable-remindable-link fail-closed branch
+    raised ProjectScopeDeniedError directly without recording
+    policy_observation."""
+    api = _FakeReminderApi(record=_record(7, remindable_href=None))
+    settings = dataclasses.replace(make_settings(), read_projects=("*",), write_projects=("*",))
+    service = _service(api=api, settings=settings)
+
+    policy_observation.reset()
+    with pytest.raises(ProjectScopeDeniedError):
+        await service.update(reminder_id=7, note="updated", confirm=True)
+    assert policy_observation.current_policy_decision() == "project_scope_write_denied"
+    assert policy_observation.current_project_scope() is None
 
     assert api.delete_calls == []
 

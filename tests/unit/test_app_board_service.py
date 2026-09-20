@@ -5,6 +5,7 @@ import dataclasses
 import pytest
 from _client_test_helpers import make_settings
 
+from openproject_ce_mcp import policy_observation
 from openproject_ce_mcp.app.errors import InvalidInputError, PermissionDeniedError, ProjectScopeDeniedError
 from openproject_ce_mcp.app.ports.board_api import BoardFormResult, BoardRecord
 from openproject_ce_mcp.app.services.board_service import BoardService
@@ -372,6 +373,21 @@ async def test_create_without_project_denies_under_restrictive_scope() -> None:
         await service.create(name="My Board", confirm=False)
 
     assert api.commit_create_calls == []
+
+
+@pytest.mark.asyncio
+async def test_create_without_project_records_policy_decision_when_denied() -> None:
+    """Regression: this no-single-project denial raised ProjectScopeDeniedError
+    directly without recording policy_observation."""
+    settings = dataclasses.replace(make_settings(), read_projects=("demo",), write_projects=("demo",))
+    api = _FakeBoardApi()
+    service = _service(api, settings=settings)
+
+    policy_observation.reset()
+    with pytest.raises(ProjectScopeDeniedError):
+        await service.create(name="My Board", confirm=False)
+    assert policy_observation.current_policy_decision() == "project_scope_write_denied"
+    assert policy_observation.current_project_scope() is None
 
 
 @pytest.mark.asyncio

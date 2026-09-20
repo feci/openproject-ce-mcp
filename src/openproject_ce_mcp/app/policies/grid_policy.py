@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ... import policy_observation
 from ...config import Settings
 from ..errors import ProjectScopeDeniedError
 from .scope import (
@@ -66,7 +67,12 @@ def ensure_grid_write_allowed(
     if scope_allows_all(settings.read_projects) and scope_allows_all(settings.write_projects):
         return
     if not scope_href:
+        policy_observation.record_project_scope(None)
+        policy_observation.record_policy_decision("project_scope_write_denied")
         raise ProjectScopeDeniedError("OpenProject writes to this grid are disabled by OPENPROJECT_WRITE_PROJECTS.")
+    # Delegates to the already-instrumented ensure_project_write_link_allowed
+    # (its own @_observe_project_scope_check decorator records
+    # project_scope/policy_decision) -- no separate recording needed here.
     ensure_project_write_link_allowed(
         {"href": scope_href}, settings=settings, project_id_to_identifier=project_id_to_identifier
     )

@@ -96,6 +96,7 @@ import logging
 import re
 from typing import Any
 
+from ... import policy_observation
 from ...config import Settings
 from ...context_gather import gather_in_current_context
 from ...models import (
@@ -1140,6 +1141,14 @@ class WorkPackageService:
         elif not total_is_scope_safe:
             allowed_ids = [str(pid) for pid in self._project_id_to_identifier]
             if not allowed_ids:
+                # No single project targeted (no `project` filter) and the
+                # allowlist has resolved to nothing readable at all --
+                # project_scope stays None (no one project is "the" denial
+                # target here), but policy_decision must still reflect the
+                # real outcome rather than staying at whatever an unrelated
+                # earlier check on this call last set it to.
+                policy_observation.record_project_scope(None)
+                policy_observation.record_policy_decision("project_scope_read_denied")
                 raise ProjectScopeDeniedError(
                     "OpenProject access to this project is disabled by OPENPROJECT_READ_PROJECTS."
                 )
