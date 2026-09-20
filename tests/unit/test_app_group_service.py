@@ -343,6 +343,28 @@ async def test_create_preview_also_denied_without_admin_write_enabled() -> None:
 
 
 @pytest.mark.asyncio
+async def test_create_denies_admin_write_before_checking_a_hidden_field() -> None:
+    """Regression (Codex review round 7): the admin-write gate must run
+    BEFORE any hidden-field check -- a prior version of create() called
+    hidden_fields.ensure_field_writable first, so a caller without
+    ADMIN_WRITE enabled AND with "name" hidden got InvalidInputError
+    ([VALIDATION_FAILED]) instead of the correct PermissionDeniedError
+    ([CAPABILITY_DISABLED]). This exact combination (admin_write disabled +
+    a hidden field) is what the other two denial tests above don't cover on
+    their own -- test_create_confirm_denied_without_admin_write_enabled has
+    no hidden field, so it can't distinguish which check ran first. update()
+    already has this ordering (see its own pre-check comment)."""
+    settings = dataclasses.replace(make_settings(), hidden_fields={"group": ("name",)})  # admin_write defaults False
+    api = _FakeGroupApi()
+    service = _service(api, settings=settings)
+
+    with pytest.raises(PermissionDeniedError):
+        await service.create(name="Backend", confirm=True)
+
+    assert api.commit_create_calls == []
+
+
+@pytest.mark.asyncio
 async def test_create_rejects_when_name_field_is_hidden() -> None:
     settings = dataclasses.replace(_admin_write_settings(), hidden_fields={"group": ("name",)})
     api = _FakeGroupApi()

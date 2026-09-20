@@ -119,6 +119,15 @@ class GroupService:
         return self._stamp(record.to_detail())
 
     async def create(self, *, name: str, user_ids: list[int] | None = None, confirm: bool = False) -> GroupWriteResult:
+        # Checked unconditionally, before any field validation -- there is no
+        # prior GET here to gate an unauthorized preview request on, so this
+        # explicit pre-check is the only thing standing between a disabled
+        # ADMIN_WRITE and a caller with a hidden "name"/"members" field
+        # getting [VALIDATION_FAILED] instead of the correct
+        # [CAPABILITY_DISABLED] -- same shape as update()'s own pre-check
+        # below; `_finalize_write`'s own `gate_before_preview` re-check is
+        # then a harmless no-I/O redundant check.
+        access.ensure_write_enabled("admin", settings=self._settings)
         hidden_fields.ensure_field_writable("group", "name", settings=self._settings)
         body: dict[str, Any] = {"name": name}
         if user_ids:
