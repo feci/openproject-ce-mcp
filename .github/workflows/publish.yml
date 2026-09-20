@@ -101,21 +101,36 @@ jobs:
             --notes-file release-notes.md \
             dist/*.whl dist/*.tar.gz dist/SHA256SUMS
 
-  update-homebrew-tap:
+  # Split into two jobs, deliberately -- NOT for readability, but because
+  # `brew update-python-resources` (below) executes the `setup.py` of every
+  # transitive dependency in this package's closure to compute its resource
+  # blocks. A compromised transitive dependency's setup.py runs with this
+  # job's full filesystem access and can persist a change anywhere under
+  # $GITHUB_WORKSPACE, e.g. planting a `.git/hooks/pre-push` in the tap
+  # checkout -- `permissions: {}`/`persist-credentials: false` alone don't
+  # stop this, since they only delay *when* a credential becomes available
+  # in the SAME runner, not prevent a later step in that same runner from
+  # ever holding one. The only structural fix is to never let the step that
+  # holds TAP_REPO_PAT share a runner/workspace with the step that executes
+  # untrusted code: prepare-homebrew-formula holds no secret at all and
+  # produces a plain data artifact (the rendered Formula file's text); the
+  # separate push-homebrew-formula job holds TAP_REPO_PAT and does a fresh
+  # checkout of its own, but never runs `brew update-python-resources` or
+  # any other step that executes third-party code -- it only overwrites the
+  # Formula file with the artifact's already-computed text and pushes.
+  prepare-homebrew-formula:
     needs: publish
     runs-on: ubuntu-latest # Linuxbrew is preinstalled here too; nothing this job does is macOS-specific
     timeout-minutes: 15
-    permissions: {} # only ever authenticates via secrets.TAP_REPO_PAT below, never GITHUB_TOKEN
+    permissions: {} # no GITHUB_TOKEN scope needed; reads the tap repo publicly, no push from here
+    outputs:
+      formula_changed: ${{ steps.diff.outputs.changed }}
     steps:
-      - name: Checkout tap repo
+      - name: Checkout tap repo (public read, no credentials)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: jtauschl/homebrew-tap
-          token: ${{ secrets.TAP_REPO_PAT }}
-          persist-credentials: false # this job's own steps pass TAP_REPO_PAT explicitly where needed;
-          # letting checkout write it into .git/config would leave it usable by
-          # any other process in the job, e.g. a malicious transitive
-          # dependency's setup.py executed below by brew update-python-resources
+          persist-credentials: false
 
       - name: Add Linuxbrew to PATH
         # Preinstalled on the ubuntu-latest image but deliberately not on PATH
@@ -152,12 +167,8 @@ jobs:
           sed -i "s|^  sha256 \".*\"|  sha256 \"${SHA256}\"|" Formula/openproject-ce-mcp.rb
 
       - name: Regenerate pinned resource blocks
-        # The one command that actually understands the dependency closure --
-        # neither known Formula-bump GitHub Action regenerates resource
-        # blocks, they only bump url/sha256/version (verified during
-        # planning: mislav's action documents this limitation directly;
-        # dawidd6's action is a thin wrapper around brew bump-formula-pr,
-        # which has the same gap).
+        # Untrusted: executes every transitive dependency's setup.py -- this
+        # job holds no secret at all, see the job-level comment above.
         run: |
           brew update-python-resources \
             --version="$VERSION" \
@@ -165,23 +176,56 @@ jobs:
             --exclude-packages=pywin32 \
             Formula/openproject-ce-mcp.rb
 
-      - name: Open a PR against the tap if the Formula changed
+      - name: Record whether the Formula actually changed
+        id: diff
+        run: |
+          if git diff --quiet Formula/openproject-ce-mcp.rb; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload the rendered Formula as a plain data artifact
+        if: steps.diff.outputs.changed == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: homebrew-formula
+          path: Formula/openproject-ce-mcp.rb
+          retention-days: 1
+
+  push-homebrew-formula:
+    needs: [publish, prepare-homebrew-formula]
+    if: needs.prepare-homebrew-formula.outputs.formula_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {} # only ever authenticates via secrets.TAP_REPO_PAT below, never GITHUB_TOKEN
+    steps:
+      - name: Checkout tap repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: jtauschl/homebrew-tap
+          token: ${{ secrets.TAP_REPO_PAT }}
+          persist-credentials: false # this job's own step passes TAP_REPO_PAT
+          # explicitly via `gh auth setup-git` below instead -- this job never
+          # runs untrusted code, but keeping the same discipline as the
+          # prepare job means a credential is never left sitting in
+          # .git/config for longer than the one step that actually needs it.
+
+      - name: Download the already-computed Formula (no code execution here)
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          name: homebrew-formula
+          path: Formula
+
+      - name: Push a commit and open a PR against the tap
         env:
           GH_TOKEN: ${{ secrets.TAP_REPO_PAT }}
         run: |
-          if git diff --quiet Formula/openproject-ce-mcp.rb; then
-            exit 0
-          fi
-          # persist-credentials: false above means checkout never wrote
-          # TAP_REPO_PAT into .git/config -- `gh auth setup-git` sets up git's
-          # credential helper to use GH_TOKEN for this push only, instead of
-          # a plaintext-URL credential that would sit in .git/config for the
-          # rest of the job (including the untrusted brew update-python-resources
-          # step above, which executes arbitrary transitive dependencies' setup.py).
+          version="${GITHUB_REF_NAME#v}"
           gh auth setup-git
-          git checkout -b "bump-${VERSION}"
+          git checkout -b "bump-${version}"
           git -c user.name="openproject-ce-mcp release bot" -c user.email="noreply@github.com" \
-            commit -am "openproject-ce-mcp ${VERSION}"
-          git push origin "bump-${VERSION}"
-          gh pr create --title "openproject-ce-mcp ${VERSION}" \
-            --body "Automated bump after the openproject-ce-mcp ${VERSION} PyPI release."
+            commit -am "openproject-ce-mcp ${version}"
+          git push origin "bump-${version}"
+          gh pr create --title "openproject-ce-mcp ${version}" \
+            --body "Automated bump after the openproject-ce-mcp ${version} PyPI release."

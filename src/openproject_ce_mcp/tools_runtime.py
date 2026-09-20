@@ -321,7 +321,19 @@ def _categorize_tool_errors(fn):
         # in production. args is only ever non-empty when a test calls the
         # wrapped function directly and positionally.
         ctx = kwargs.get("ctx", args[0] if args else None)
-        request_id = getattr(ctx, "request_id", None)
+        # Context.request_id is a property that raises ValueError (not
+        # AttributeError) when the Context wraps no real request_context --
+        # e.g. this wrapper driven in-process without the SDK's normal
+        # request-handling machinery around it, as several tests do. Plain
+        # getattr() only catches AttributeError, so a broken request_id
+        # lookup here would otherwise escape uncoded and unlogged, before
+        # the try block below ever gets a chance to turn the real tool
+        # error into a sanitized outcome -- same class of bug already fixed
+        # in strict_mcpserver.py's own dispatch-level request_id lookup.
+        try:
+            request_id = ctx.request_id if ctx is not None else None
+        except Exception:
+            request_id = None
         start = time.monotonic()
         error_code: str | None = None
         layer: str | None = None

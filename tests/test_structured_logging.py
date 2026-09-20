@@ -100,6 +100,57 @@ async def test_request_id_is_read_from_the_ctx_kwarg_matching_real_mcp_dispatch(
     assert record["request_id"] == "req-kwarg-1"
 
 
+class _BrokenRequestIdCtx:
+    """Matches the real mcp.server.mcpserver.Context.request_id property,
+    which raises ValueError (not AttributeError) when the Context wraps no
+    real request_context -- e.g. a test driving a tool function directly
+    without the SDK's normal request-handling machinery around it."""
+
+    @property
+    def request_id(self) -> str:
+        raise ValueError("Context is not available outside of a request")
+
+
+@pytest.mark.asyncio
+async def test_broken_request_id_lookup_does_not_mask_the_real_tool_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Regression (Codex review round 6): the wrapper read
+    `getattr(ctx, "request_id", None)` -- plain getattr() only catches
+    AttributeError, so a request_id property raising ValueError propagated
+    straight out of the wrapper, before the try block even started,
+    replacing the tool's own real, sanitized [VALIDATION_FAILED] outcome
+    with an uncoded, unlogged ValueError instead. Same class of bug already
+    fixed in strict_mcpserver.py's own dispatch-level request_id lookup."""
+
+    @_categorize_tool_errors
+    async def failing_tool(_ctx) -> str:
+        raise ValueError("bad input")
+
+    with caplog.at_level(logging.WARNING, logger=LOGGER.name):
+        with pytest.raises(ValueError, match=r"\[VALIDATION_FAILED\] bad input"):
+            await failing_tool(_BrokenRequestIdCtx())
+
+    [record] = _structured_records(caplog)
+    assert record["error_code"] == "VALIDATION_FAILED"
+    assert record["request_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_broken_request_id_lookup_still_logs_a_success(caplog: pytest.LogCaptureFixture) -> None:
+    @_categorize_tool_errors
+    async def ok_tool(_ctx) -> str:
+        return "fine"
+
+    with caplog.at_level(logging.INFO, logger=LOGGER.name):
+        result = await ok_tool(_BrokenRequestIdCtx())
+
+    assert result == "fine"
+    [record] = _structured_records(caplog)
+    assert record["status"] == "success"
+    assert record["request_id"] is None
+
+
 # ── error-code-family table: (exception, expected code, expected layer) ────────
 
 _ERROR_FAMILY_CASES = [
