@@ -64,9 +64,11 @@ jobs:
         with:
           subject-path: "dist/*"
 
-      - name: Publish to PyPI
-        run: uv publish
-
+      # Validated BEFORE the PyPI publish step, deliberately -- uv publish
+      # makes this release immutably public and a failed re-run afterward
+      # can never recover (PyPI rejects re-uploading the same version's
+      # files), so any gate that can still be fixed by editing CHANGELOG.md
+      # and re-tagging must run first, while that's still an option.
       - name: Extract this version's CHANGELOG section for release notes
         run: |
           awk -v ver="${GITHUB_REF_NAME#v}" '
@@ -77,6 +79,9 @@ jobs:
             echo "::error::No CHANGELOG.md section found for version ${GITHUB_REF_NAME#v} — add one before tagging" >&2
             exit 1
           fi
+
+      - name: Publish to PyPI
+        run: uv publish
 
       - name: Generate SHA-256 checksums
         # Generated after attestation, so the attested dist/* subject set

@@ -89,16 +89,17 @@ def register_selected_tools(mcp: MCPServer, *, names: Iterable[str], hide_active
     """
 
     def tool(fn):
-        wrapped = _categorize_tool_errors(fn)
         # Python 3.13 dedents function docstrings at compile time; older
         # supported interpreters preserve indentation after blank lines.
         # Normalize at the public registration boundary so one source exposes
         # one MCP description on every supported interpreter.
-        description = wrapped.__doc__ or ""
+        description = fn.__doc__ or ""
         trailing_newline = "\n" if description.rstrip(" \t").endswith("\n") else ""
-        wrapped.__doc__ = inspect.cleandoc(description) + trailing_newline
+        normalized_doc = inspect.cleandoc(description) + trailing_newline
 
         if not (_returns_trimmable(fn) or (hide_active and _returns_dataclass(fn))):
+            wrapped = _categorize_tool_errors(fn)
+            wrapped.__doc__ = normalized_doc
             return mcp.tool()(wrapped)
 
         # Whether this tool's own signature accepts `select` -- NOT whether its
@@ -109,10 +110,18 @@ def register_selected_tools(mcp: MCPServer, *, names: Iterable[str], hide_active
         # None fields with no way for a caller to ask for them back.
         elide_none = "select" in inspect.signature(fn).parameters
 
-        @functools.wraps(wrapped)
+        # _categorize_tool_errors wraps THIS function (trimming), not `fn`
+        # directly -- trimming's own _to_payload/json.dumps calls run inside
+        # the protected/logged operation, not after it. Wrapping `fn` alone
+        # (the old shape) let the inner call log "success" and return before
+        # trimming/serialization ever ran; a failure in that step then raised
+        # an uncoded, unsanitized exception past every guarantee this module
+        # otherwise provides, and the structured log record already claimed
+        # success for a call that hadn't actually finished.
+        @functools.wraps(fn)
         async def trimming(*args, **kwargs):
             select = _normalize_select(kwargs.get("select"))
-            result = await wrapped(*args, **kwargs)
+            result = await fn(*args, **kwargs)
             if isinstance(result, ContentBundle):
                 # The bundle's body is trimmed exactly like any other result
                 # and emitted as the leading JSON block; only the extra
@@ -125,7 +134,9 @@ def register_selected_tools(mcp: MCPServer, *, names: Iterable[str], hide_active
                 ]
             return _to_payload(result, select=select, elide_none=elide_none)
 
-        return mcp.tool(structured_output=False)(trimming)
+        wrapped = _categorize_tool_errors(trimming)
+        wrapped.__doc__ = normalized_doc
+        return mcp.tool(structured_output=False)(wrapped)
 
     # Materialize once: `names` is consumed twice below (the completeness
     # check, then the registration loop), which would silently register
@@ -321,14 +332,25 @@ def _categorize_tool_errors(fn):
             _emit_tool_call_log(fn.__name__, "error", start, error_code, layer, request_id, LOGGER.warning)
             raise ValueError(_prefix("VALIDATION_FAILED", str(exc))) from exc
         except RuntimeError as exc:
-            # Already coded by _run_tool inside `fn` via _categorize_openproject_error,
-            # which attaches .code/.layer to exactly this exception instance --
-            # must not be re-wrapped into a generic error (which would destroy
-            # the real classification), just logged and re-raised as-is.
-            error_code = getattr(exc, "code", None)
-            layer = getattr(exc, "layer", None)
+            # Only a RuntimeError already coded by _run_tool via
+            # _categorize_openproject_error (which attaches .code/.layer to
+            # exactly that exception instance) is safe to re-raise verbatim
+            # -- its message is already the sanitized `[CODE] ...` form. An
+            # uncoded RuntimeError (a real bug in library/tool code that
+            # happens to raise this built-in type, not something this
+            # module produced) has no such guarantee and must fall through
+            # to the same sanitization backstop as any other unexpected
+            # exception, or its raw message (which could carry an internal
+            # path, host, or other detail) would reach the client unfiltered.
+            if hasattr(exc, "code") and hasattr(exc, "layer"):
+                error_code = exc.code  # type: ignore[attr-defined]
+                layer = exc.layer  # type: ignore[attr-defined]
+                _emit_tool_call_log(fn.__name__, "error", start, error_code, layer, request_id, LOGGER.warning)
+                raise
+            error_code, layer = "INTERNAL_ERROR", "internal"
+            LOGGER.exception("Unhandled exception in tool %s", fn.__name__)
             _emit_tool_call_log(fn.__name__, "error", start, error_code, layer, request_id, LOGGER.warning)
-            raise
+            raise RuntimeError(_prefix("INTERNAL_ERROR", "An internal error occurred.")) from exc
         except OpenProjectError as exc:
             # Some tool body calls a raising API directly without going
             # through _run_tool -- give it its own real code via the same

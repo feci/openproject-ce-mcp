@@ -81,7 +81,16 @@ def _classify() -> dict[str, tuple[str, str, tuple[str, ...]]]:
     """tool name -> (classification, scope, capability_env_vars), derived
     from tools.py's classification tables -- the same tables
     test_tool_groups.py already proves partition the full tool set with no
-    overlaps or gaps."""
+    overlaps or gaps.
+
+    `capability_env_vars` also folds in `tools.ADDITIONAL_READ_SCOPES_BY_TOOL`
+    for any tool listed there -- a tool's home scope alone understates its
+    real registration requirements for these (e.g.
+    `get_project_work_package_context`'s home scope is "project", but
+    `enabled_tool_names()` additionally requires work_package AND version
+    read). Omitting these env vars here would let a real capability-gate
+    change to one of these tools drift unnoticed past this schema-drift gate
+    -- exactly what OPM-2707 exists to catch."""
     classification: dict[str, tuple[str, str, tuple[str, ...]]] = {}
     for scope, names in tools.READ_TOOLS_BY_SCOPE.items():
         for name in names:
@@ -101,6 +110,10 @@ def _classify() -> dict[str, tuple[str, str, tuple[str, ...]]]:
             "work_package",
             (_WRITE_SCOPE_ENV_VAR["work_package"], "OPENPROJECT_ATTACHMENT_ROOT"),
         )
+    for name, additional_scopes in tools.ADDITIONAL_READ_SCOPES_BY_TOOL.items():
+        kind, scope, env_vars = classification[name]
+        additional_env_vars = tuple(READ_SCOPE_ENV_VAR[s] for s in sorted(additional_scopes))
+        classification[name] = (kind, scope, tuple(dict.fromkeys(env_vars + additional_env_vars)))
     return classification
 
 
@@ -508,7 +521,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "membership",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_MEMBERSHIP_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEMBERSHIP_WRITE", "OPENPROJECT_ENABLE_MEMBERSHIP_READ"),
     },
     "create_news": {
         "description_hash": "52796c0098278a3719974e8db86917173d7c4b4243f6dc657ba596075e8d97db",
@@ -1111,7 +1124,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         },
         "classification": "write",
         "scope": "work_package",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "delete_grid": {
         "description_hash": "104b9b56e2f05e871d5b07d9fc2547cd2b1f40a535519dee9b8ba5fdd2d13f00",
@@ -2463,7 +2476,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         },
         "classification": "read",
         "scope": "project",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_READ",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_READ", "OPENPROJECT_ENABLE_MEMBERSHIP_READ"),
     },
     "get_news": {
         "description_hash": "104a0353e7cec4c307499dbd8b8ff380e2b90e5554ba0a43ab2bc6735b98f5b9",
@@ -3141,7 +3154,11 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         },
         "classification": "read",
         "scope": "project",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_PROJECT_READ",),
+        "capability_env_vars": (
+            "OPENPROJECT_ENABLE_PROJECT_READ",
+            "OPENPROJECT_ENABLE_VERSION_READ",
+            "OPENPROJECT_ENABLE_WORK_PACKAGE_READ",
+        ),
     },
     "get_query_column": {
         "description_hash": "75f7aeaa980c1d6cce94660dda1f2e6a28a51dc3b1b3bd0f1f6ae8a9b1a2f9eb",
@@ -3166,7 +3183,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         },
         "classification": "read",
         "scope": "extended",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_EXTENDED_READ",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_EXTENDED_READ", "OPENPROJECT_ENABLE_BOARD_READ"),
     },
     "get_query_filter": {
         "description_hash": "40007813d71eca343b2e6a30d01ca818372f4d641b9d54539e7186322407d789",
@@ -3189,7 +3206,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         },
         "classification": "read",
         "scope": "extended",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_EXTENDED_READ",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_EXTENDED_READ", "OPENPROJECT_ENABLE_BOARD_READ"),
     },
     "get_query_filter_instance_schema": {
         "description_hash": "e9efb9e06662e89829e624bac1a56b700c7600719b48930be1abd1f81e64b33b",
@@ -3214,7 +3231,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         },
         "classification": "read",
         "scope": "extended",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_EXTENDED_READ",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_EXTENDED_READ", "OPENPROJECT_ENABLE_BOARD_READ"),
     },
     "get_query_operator": {
         "description_hash": "883e2ad6674cec5f62080b9f3c1d4d15fd25a96c35419ec3a761fa7572fcd646",
@@ -3237,7 +3254,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         },
         "classification": "read",
         "scope": "extended",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_EXTENDED_READ",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_EXTENDED_READ", "OPENPROJECT_ENABLE_BOARD_READ"),
     },
     "get_query_sort_by": {
         "description_hash": "34890f309bd974c5ffa71891ff4421223e16fc75ba42cc75bf710da1ef241b85",
@@ -3262,7 +3279,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         },
         "classification": "read",
         "scope": "extended",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_EXTENDED_READ",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_EXTENDED_READ", "OPENPROJECT_ENABLE_BOARD_READ"),
     },
     "get_recurring_meeting": {
         "description_hash": "41ebf6423d80b94fd1b95afc3220066057ab9abe6a3aa0a51025fffbd8e9d0ff",
@@ -4424,7 +4441,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "read",
         "scope": "extended",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_EXTENDED_READ",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_EXTENDED_READ", "OPENPROJECT_ENABLE_BOARD_READ"),
     },
     "list_recurring_meeting_occurrences": {
         "description_hash": "4788b6f3476466a2ab5c732561c0156d970b1785c1f8bab56b7c5488d0b60a33",
@@ -5096,7 +5113,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         },
         "classification": "read",
         "scope": "extended",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_EXTENDED_READ",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_EXTENDED_READ", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "search_work_packages": {
         "description_hash": "f1735147db2b0f481a10c0decafdac34cb1ed85403253983baae843a5a035d63",
@@ -5594,7 +5611,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "output_schema": None,
         "classification": "write",
         "scope": "membership",
-        "capability_env_vars": ("OPENPROJECT_ENABLE_MEMBERSHIP_WRITE",),
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEMBERSHIP_WRITE", "OPENPROJECT_ENABLE_MEMBERSHIP_READ"),
     },
     "update_my_preferences": {
         "description_hash": "d523140434dd01bb21d9def39dd36ff08cb788c12f162126e887261302efc908",

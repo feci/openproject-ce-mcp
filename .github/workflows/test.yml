@@ -233,24 +233,35 @@ jobs:
           [ "$exit_code" -eq 0 ] || { echo "::error::server did not exit cleanly (exit $exit_code)" >&2; exit 1; }
 
       - name: uv tool install
+        # uv's default tool bin dir (~/.local/bin) is the SAME directory pipx
+        # just installed into above -- `uv tool install` would otherwise fail
+        # with "Executable already exists ... (use --force to overwrite)"
+        # before ever exercising the uv-installed binary. A separate
+        # UV_TOOL_BIN_DIR keeps both installs intact and independently
+        # testable, matching this job's actual intent (verify BOTH install
+        # paths work, not one overwriting the other).
         working-directory: ${{ env.SCRATCH }}
-        run: uv tool install /tmp/dist/openproject_ce_mcp-*.whl
+        run: |
+          mkdir -p "${{ env.SCRATCH }}/uv-tool-bin"
+          echo "UV_TOOL_BIN_DIR=${{ env.SCRATCH }}/uv-tool-bin" >> "$GITHUB_ENV"
+          echo "${{ env.SCRATCH }}/uv-tool-bin" >> "$GITHUB_PATH"
+          UV_TOOL_BIN_DIR="${{ env.SCRATCH }}/uv-tool-bin" uv tool install /tmp/dist/openproject_ce_mcp-*.whl
 
       - name: "uv-tool: --version"
-        run: openproject-ce-mcp --version
+        run: "${{ env.SCRATCH }}/uv-tool-bin/openproject-ce-mcp --version"
 
       - name: "uv-tool: configure --help"
-        run: openproject-ce-mcp configure --help
+        run: "${{ env.SCRATCH }}/uv-tool-bin/openproject-ce-mcp configure --help"
 
       - name: "uv-tool: doctor --help"
-        run: openproject-ce-mcp doctor --help
+        run: "${{ env.SCRATCH }}/uv-tool-bin/openproject-ce-mcp doctor --help"
 
       - name: "uv-tool: bounded MCP STDIO startup"
         run: |
           set +e
           OPENPROJECT_BASE_URL="https://op.invalid.example" \
           OPENPROJECT_API_TOKEN="synthetic-ci-token" \
-            timeout --signal=TERM 20 openproject-ce-mcp </dev/null >stdout.log 2>stderr.log
+            timeout --signal=TERM 20 "${{ env.SCRATCH }}/uv-tool-bin/openproject-ce-mcp" </dev/null >stdout.log 2>stderr.log
           exit_code=$?
           set -e
           cat stdout.log
@@ -328,12 +339,20 @@ jobs:
         # 0.4.1" is a substring of "openproject-ce-mcp 0.4.10"/"0.4.11"/etc, so
         # `grep -qv "0.4.1"` would wrongly PASS a truly stale baseline binary
         # the moment the 0.4.x line reaches a second patch digit.
+        #
+        # Semantic-version comparison (`sort -V`, GNU coreutils -- guaranteed
+        # on ubuntu-latest), not just inequality: a bare `!=` check would
+        # wrongly PASS a candidate that's actually OLDER than the baseline
+        # (e.g. candidate 0.3.8 vs. baseline 0.4.10) as long as the strings
+        # merely differ, which is not what "bumped past the last published
+        # release" means.
         run: |
           out="$(openproject-ce-mcp --version)"
           echo "$out"
           candidate_version="${out##* }"
-          if [ "$candidate_version" = "${{ env.BASELINE_VERSION }}" ]; then
-            echo "::error::candidate version ($candidate_version) matches the baseline (${{ env.BASELINE_VERSION }}) -- version was not bumped" >&2
+          highest="$(printf '%s\n%s\n' "$candidate_version" "${{ env.BASELINE_VERSION }}" | sort -V | tail -1)"
+          if [ "$candidate_version" = "${{ env.BASELINE_VERSION }}" ] || [ "$highest" != "$candidate_version" ]; then
+            echo "::error::candidate version ($candidate_version) is not newer than the baseline (${{ env.BASELINE_VERSION }}) -- version was not bumped" >&2
             exit 1
           fi
 

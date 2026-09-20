@@ -918,3 +918,52 @@ def test_returns_content_bundle_reads_string_and_union_annotations() -> None:
     assert _returns_content_bundle(bare) is True
     assert _returns_content_bundle(union) is True
     assert _returns_content_bundle(plain) is False
+
+
+# ── error categorization must protect the trimming/serialization stage too ────
+
+
+@pytest.mark.asyncio
+async def test_trimming_stage_failure_is_sanitized_and_logged_as_an_error(caplog, monkeypatch) -> None:
+    """Regression: _categorize_tool_errors wraps the trimming wrapper as a
+    whole (not just the raw tool function it trims) -- a failure inside
+    _to_payload/json.dumps (the trimming stage itself, e.g. a serialization
+    bug) must go through the same [INTERNAL_ERROR] sanitization backstop as
+    a bug in the tool body, and the structured log must record "error" for
+    that call, never "success" for a call whose response was never actually
+    produced. Before this fix, _categorize_tool_errors wrapped only the raw
+    tool function, so a trimming-stage failure logged success (the raw
+    function had already returned) and then raised an uncoded, unsanitized
+    exception past every guarantee this module otherwise provides."""
+    import logging
+
+    from openproject_ce_mcp import tools_runtime
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v3/statuses":
+            return httpx.Response(
+                200,
+                json={"_embedded": {"elements": [{"id": 1, "name": "New", "isDefault": True, "isClosed": False}]}},
+                request=request,
+            )
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    def broken_to_payload(value, *, select=None, elide_none=True):
+        raise RuntimeError("simulated serialization bug: /etc/secrets/internal.yaml")
+
+    monkeypatch.setattr(tools_runtime, "_to_payload", broken_to_payload)
+
+    settings = _make_settings()
+    client = OpenProjectClient(settings, transport=httpx.MockTransport(handler))
+    fn = _tools(create_app(settings))["list_statuses"].fn
+
+    with caplog.at_level(logging.WARNING, logger=tools_runtime.LOGGER.name):
+        with pytest.raises(RuntimeError, match=r"^\[INTERNAL_ERROR\] An internal error occurred\.$") as exc_info:
+            await fn(_FakeContext(client))
+    await client.aclose()
+
+    assert "/etc/secrets" not in str(exc_info.value)
+    structured = [r.structured for r in caplog.records if hasattr(r, "structured")]
+    assert len(structured) == 1
+    assert structured[0]["status"] == "error"
+    assert structured[0]["error_code"] == "INTERNAL_ERROR"

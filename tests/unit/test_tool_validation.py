@@ -707,6 +707,29 @@ async def test_categorize_tool_errors_reclassifies_uncoded_openproject_error() -
         await raw_not_found(None)
 
 
+@pytest.mark.asyncio
+async def test_categorize_tool_errors_sanitizes_an_uncoded_runtime_error() -> None:
+    """Regression: a plain RuntimeError NOT produced by
+    _categorize_openproject_error (a real bug in tool/library code that
+    happens to raise this built-in type, e.g. a bare `raise RuntimeError(...)`
+    somewhere, or a third-party library's own RuntimeError) has no `.code`/
+    `.layer` attributes and must be sanitized like any other unexpected
+    exception -- not re-raised verbatim, which would leak its raw message
+    (a real information-disclosure risk: the message could contain an
+    internal path, host, or other implementation detail) to the MCP client."""
+    from openproject_ce_mcp.tools_runtime import _categorize_tool_errors
+
+    @_categorize_tool_errors
+    async def uncoded_runtime_error(_ctx):
+        raise RuntimeError("internal path /etc/secrets/config.yaml, host=10.0.0.5")
+
+    with pytest.raises(RuntimeError, match=r"^\[INTERNAL_ERROR\] An internal error occurred\.$") as exc_info:
+        await uncoded_runtime_error(None)
+    assert "/etc/secrets" not in str(exc_info.value)
+    assert "10.0.0.5" not in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+
+
 def test_validate_sort_by_accepts_real_sortable_columns() -> None:
     # These column identifiers are what GET /work_packages?sortBy= actually
     # accepts (cross-checked against OpenProject's own query
