@@ -1128,20 +1128,31 @@ def _apply_global_registration(clients: list[Client], command: str, env: dict[st
     return _apply_registration(clients, command, env, scope="global")
 
 
+#  READ_PROJECTS/WRITE_PROJECTS are fail-closed: an explicit empty string is a
+#  deliberate "nothing readable/writable" (see CLAUDE.md), not "unset" -- it
+#  must win over an earlier, broader value the same way a non-empty override
+#  would, or re-running the wizard against several existing configs could
+#  silently widen a config that had intentionally locked scope down to none.
+_PREFILL_KEYS_WHERE_EMPTY_IS_MEANINGFUL = frozenset({"OPENPROJECT_READ_PROJECTS", "OPENPROJECT_WRITE_PROJECTS"})
+
+
 def _merge_prefill(pairs: list[tuple[Client, Path | None]]) -> dict[str, str]:
     """Field-wise prefill merge over (client, target) pairs, in priority order.
 
-    Later pairs override earlier ones ONLY for keys they actually define — so a
+    Later pairs override earlier ones for keys they actually define — so a
     partial config (e.g. a project ``.codex/config.toml`` with a base URL but no
     token) contributes its URL without discarding a complete global entry's
-    token. Pass pairs LOWEST priority first (globals), HIGHEST last
-    (project/cwd).
+    token. For most keys "defines" means non-empty (an empty value reads the
+    same as "not set", e.g. a client config with no token yet); for the two
+    fail-closed scope keys above, "defines" means present at all, since empty
+    is itself the meaningful, restrictive value. Pass pairs LOWEST priority
+    first (globals), HIGHEST last (project/cwd).
     """
     merged: dict[str, str] = {}
     for client, target in pairs:
         env = _read_client_env(client, target=target)
         for key, value in env.items():
-            if value:
+            if value or key in _PREFILL_KEYS_WHERE_EMPTY_IS_MEANINGFUL:
                 merged[key] = value
     return merged
 
@@ -1420,6 +1431,7 @@ def _collect_credentials(
         max_results = existing.get("OPENPROJECT_MAX_RESULTS", "100")
         text_limit = existing.get("OPENPROJECT_TEXT_LIMIT", "500")
         log_level = existing.get("OPENPROJECT_LOG_LEVEL", "WARNING")
+        log_format = existing.get("OPENPROJECT_LOG_FORMAT", "text")
         attachment_root = existing.get("OPENPROJECT_ATTACHMENT_ROOT", "")
         # Carried over, never prompted for: an operator-tuned context-window cap
         # is an edit-the-file setting, and dropping it on a re-run would silently
@@ -1529,6 +1541,7 @@ def _collect_credentials(
             retry_base_delay = _prompt("Retry base delay seconds", retry_base_delay)
             retry_max_delay = _prompt("Retry max delay seconds", retry_max_delay)
             log_level = _prompt("Log level", log_level)
+            log_format = _prompt("Log format (text/json)", log_format)
 
         # Write-flag reconciliation: from the ORIGINAL (unmutated) values, once, using
         # the now-validated read booleans — never mutate write_flags across retries
@@ -1600,6 +1613,7 @@ def _collect_credentials(
             "OPENPROJECT_RETRY_BASE_DELAY": retry_base_delay,
             "OPENPROJECT_RETRY_MAX_DELAY": retry_max_delay,
             "OPENPROJECT_LOG_LEVEL": log_level,
+            "OPENPROJECT_LOG_FORMAT": log_format,
         }
 
         if not interactive:
@@ -1813,6 +1827,7 @@ _MINIMAL_ENV_FIELD_MAP: tuple[tuple[str, str], ...] = (
     ("OPENPROJECT_RETRY_BASE_DELAY", "retry_base_delay"),
     ("OPENPROJECT_RETRY_MAX_DELAY", "retry_max_delay"),
     ("OPENPROJECT_LOG_LEVEL", "log_level"),
+    ("OPENPROJECT_LOG_FORMAT", "log_format"),
 )
 
 

@@ -1049,6 +1049,25 @@ def test_merge_prefill_empty_project_token_does_not_blank_global_token(tmp_path:
     assert merged["OPENPROJECT_API_TOKEN"] == "gtok"
 
 
+@pytest.mark.parametrize("scope_key", ["OPENPROJECT_READ_PROJECTS", "OPENPROJECT_WRITE_PROJECTS"])
+def test_merge_prefill_explicit_empty_scope_overrides_broader_global_value(tmp_path: Path, scope_key: str) -> None:
+    """Regression (Codex review round 5): both scope keys are fail-closed --
+    an explicit empty string is a deliberate "nothing readable/writable", not
+    "unset". The pre-fix merge treated empty the same as absent for every
+    key, so a higher-priority (project) config that intentionally locked
+    scope down to none was silently widened back to an earlier, broader
+    global value (e.g. "*") -- the opposite of what re-running the wizard
+    against several existing configs should ever do."""
+    global_f = tmp_path / "global.json"
+    global_f.write_text(json.dumps({"mcpServers": {"openproject": {"env": {scope_key: "*"}}}}))
+    project_f = tmp_path / "project.json"
+    project_f.write_text(json.dumps({"mcpServers": {"openproject": {"env": {scope_key: ""}}}}))
+    gclient = c.Client("g", "G", global_f, "json", lambda: True, "d", root_key="mcpServers")
+    pclient = c.Client("p", "P", tmp_path / "unused", "json", lambda: True, "d", root_key="mcpServers")
+    merged = c._merge_prefill([(gclient, global_f), (pclient, project_f)])
+    assert merged[scope_key] == ""
+
+
 def test_shim_reexports_public_names() -> None:
     # The root configure_mcp.py shim must re-export main and helpers so a
     # manual source checkout (`python3 configure_mcp.py`) and any importer
@@ -1353,6 +1372,7 @@ _ADVANCED_ONLY_DEFAULTS: dict[str, str] = {
     "Retry base delay seconds": "",
     "Retry max delay seconds": "",
     "Log level": "",
+    "Log format (text/json)": "",
 }
 # Quick mode (not --advanced): once "Enable write access?" is answered yes,
 # these 6 per-category Y/N prompts are asked unconditionally. Tests that drive
@@ -1937,6 +1957,7 @@ def test_main_skipping_advanced_preserves_existing_advanced_values(monkeypatch, 
                             "OPENPROJECT_MAX_RETRIES": "7",
                             "OPENPROJECT_RETRY_BASE_DELAY": "2.5",
                             "OPENPROJECT_RETRY_MAX_DELAY": "30",
+                            "OPENPROJECT_LOG_FORMAT": "json",
                         },
                     }
                 }
@@ -1964,6 +1985,48 @@ def test_main_skipping_advanced_preserves_existing_advanced_values(monkeypatch, 
     assert env["OPENPROJECT_MAX_RETRIES"] == "7"
     assert env["OPENPROJECT_RETRY_BASE_DELAY"] == "2.5"
     assert env["OPENPROJECT_RETRY_MAX_DELAY"] == "30"
+    assert env["OPENPROJECT_LOG_FORMAT"] == "json"
+
+
+def test_main_quick_mode_preserves_existing_log_format_without_reprompting(monkeypatch, tmp_path: Path) -> None:
+    """Regression (Codex review round 5): OPENPROJECT_LOG_FORMAT was entirely
+    absent from the wizard -- not read as prefill, not written to the
+    generated env, not in _MINIMAL_ENV_FIELD_MAP -- so re-running configure
+    against an existing json-logging setup silently reverted it to text on
+    every save, even outside --advanced mode where there is no prompt to
+    answer at all."""
+    target = tmp_path / ".mcp.json"
+    target.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "openproject": {
+                        "command": "old",
+                        "env": {
+                            "OPENPROJECT_BASE_URL": "https://old.example.com",
+                            "OPENPROJECT_API_TOKEN": "old-token",
+                            "OPENPROJECT_LOG_FORMAT": "json",
+                        },
+                    }
+                }
+            }
+        )
+    )
+    claude = _json_client(tmp_path / ".claude.json", project_target=target)
+
+    answers = {
+        "Configure globally": "n",
+        "Configure project-scoped": "y",
+        "Configure Claude Code?": "y",
+        "OpenProject base URL": "",
+        "Readable projects": "",
+        "Enable write access?": "",
+    }
+    _run_main(monkeypatch, tmp_path, [claude], answers, secret="")
+
+    data = json.loads(target.read_text())
+    env = data["mcpServers"]["openproject"]["env"]
+    assert env["OPENPROJECT_LOG_FORMAT"] == "json"
 
 
 # ── quick/advanced mode ─────────────────────────────────────────────
@@ -2409,6 +2472,7 @@ def test_main_advanced_setup_prompts_for_optional_values(monkeypatch, tmp_path: 
         "Retry base delay seconds": "0.5",
         "Retry max delay seconds": "10",
         "Log level": "INFO",
+        "Log format (text/json)": "json",
     }
     _run_main(monkeypatch, tmp_path, [claude], answers, argv=["--advanced"])
 
@@ -2427,6 +2491,7 @@ def test_main_advanced_setup_prompts_for_optional_values(monkeypatch, tmp_path: 
     assert env["OPENPROJECT_DEFAULT_PAGE_SIZE"] == "5"
     assert env["OPENPROJECT_MAX_RETRIES"] == "4"
     assert env["OPENPROJECT_RETRY_BASE_DELAY"] == "0.5"
+    assert env["OPENPROJECT_LOG_FORMAT"] == "json"
 
 
 # ── Wizard reconciliation + validation ─────────────
@@ -3038,6 +3103,7 @@ _FULL_DEFAULT_ENV: dict[str, str] = {
     "OPENPROJECT_RETRY_BASE_DELAY": "1.0",
     "OPENPROJECT_RETRY_MAX_DELAY": "60.0",
     "OPENPROJECT_LOG_LEVEL": "WARNING",
+    "OPENPROJECT_LOG_FORMAT": "text",
 }
 
 
@@ -3083,6 +3149,7 @@ def test_minimal_env_all_defaults_keeps_only_base_url_and_token() -> None:
         ("OPENPROJECT_RETRY_BASE_DELAY", "0.5"),
         ("OPENPROJECT_RETRY_MAX_DELAY", "10"),
         ("OPENPROJECT_LOG_LEVEL", "INFO"),
+        ("OPENPROJECT_LOG_FORMAT", "json"),
     ],
 )
 def test_minimal_env_keeps_a_single_deviated_key(env_key: str, deviated_value: str) -> None:
@@ -3179,6 +3246,7 @@ def test_minimal_env_keeps_original_string_not_a_reformatted_settings_value() ->
             "OPENPROJECT_ENABLE_PERSONAL_WRITE": "true",
             "OPENPROJECT_TIMEOUT": "30",
             "OPENPROJECT_LOG_LEVEL": "ERROR",
+            "OPENPROJECT_LOG_FORMAT": "json",
         },
     ],
 )
