@@ -237,6 +237,15 @@ class StorageService:
         host: str | None = None,
         confirm: bool = False,
     ) -> StorageWriteResult:
+        # Checked unconditionally, before any field validation and before the
+        # preview-branch GET below -- see this file's docstring. Must fire
+        # first, or a caller with admin write disabled AND a hidden
+        # "name"/"host" field gets [VALIDATION_FAILED] instead of the correct
+        # [CAPABILITY_DISABLED] -- same shape as create()'s own pre-check
+        # above; `_finalize_write`'s own `gate_before_preview` re-check is
+        # then a harmless no-I/O redundant check.
+        access.ensure_write_enabled("admin", settings=self._settings)
+
         body: dict[str, Any] = {}
         links: dict[str, Any] = {}
         if name is not None:
@@ -252,12 +261,6 @@ class StorageService:
             payload_preview["name"] = name
         if host is not None:
             payload_preview["host"] = host
-
-        # Checked unconditionally, before the preview-branch GET below -- see
-        # this file's docstring. Must fire before that GET, so this is an
-        # explicit pre-check; `_finalize_write`'s own `gate_before_preview`
-        # re-check is then a harmless no-I/O redundant check.
-        access.ensure_write_enabled("admin", settings=self._settings)
 
         # Fetched only on the preview branch -- the confirmed branch never
         # references it (its own PATCH result comes from commit_update).

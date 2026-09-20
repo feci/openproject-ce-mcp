@@ -378,61 +378,11 @@ async def test_retryable_response_closed_before_retry():
 #    including each individual retry, not just "1" per logical call ──────────
 
 
-@pytest.mark.asyncio
-async def test_http_request_counter_counts_every_retry_attempt():
-    """A GET that fails twice with 503 before succeeding on the third
-    attempt must count as 3 http_requests, not 1 -- undercounting here would
-    make OPM-2709's structured log field misleading for exactly the calls an
-    operator most wants visibility into (ones that needed retries)."""
-    from openproject_ce_mcp import http_request_counter
-
-    mock_transport = AsyncMock(spec=httpx.AsyncBaseTransport)
-    mock_transport.handle_async_request.side_effect = [
-        httpx.Response(503, request=httpx.Request("GET", "http://test")),
-        httpx.Response(503, request=httpx.Request("GET", "http://test")),
-        httpx.Response(200, request=httpx.Request("GET", "http://test")),
-    ]
-
-    retry_transport = RetryTransport(mock_transport, max_retries=3, base_delay=0.01)
-    request = httpx.Request("GET", "http://test/api")
-
-    http_request_counter.reset()
-    response = await retry_transport.handle_async_request(request)
-
-    assert response.status_code == 200
-    assert mock_transport.handle_async_request.call_count == 3
-    assert http_request_counter.current() == 3
-
-
-@pytest.mark.asyncio
-async def test_http_request_counter_counts_a_single_successful_get_as_one():
-    from openproject_ce_mcp import http_request_counter
-
-    mock_transport = AsyncMock(spec=httpx.AsyncBaseTransport)
-    mock_transport.handle_async_request.return_value = httpx.Response(200, request=httpx.Request("GET", "http://test"))
-
-    retry_transport = RetryTransport(mock_transport, max_retries=3)
-    request = httpx.Request("GET", "http://test/api")
-
-    http_request_counter.reset()
-    await retry_transport.handle_async_request(request)
-
-    assert http_request_counter.current() == 1
-
-
-@pytest.mark.asyncio
-async def test_http_request_counter_counts_a_non_idempotent_post_as_one():
-    """POST is never retried, but it still goes through the same wire-level
-    counting point -- must count as 1, not 0."""
-    from openproject_ce_mcp import http_request_counter
-
-    mock_transport = AsyncMock(spec=httpx.AsyncBaseTransport)
-    mock_transport.handle_async_request.return_value = httpx.Response(503, request=httpx.Request("POST", "http://test"))
-
-    retry_transport = RetryTransport(mock_transport, max_retries=3)
-    request = httpx.Request("POST", "http://test/api")
-
-    http_request_counter.reset()
-    await retry_transport.handle_async_request(request)
-
-    assert http_request_counter.current() == 1
+# http_request_counter coverage lives in test_counting_transport.py --
+# CountingTransport (not RetryTransport) is where every real wire-level
+# request is now counted, so retries are counted only when it's layered
+# outside CountingTransport, matching client.py's actual wiring. See that
+# file's own module docstring for why the counting responsibility moved
+# out of this transport (OPM-2709 / a Codex review round 8 finding: at
+# OPENPROJECT_MAX_RETRIES=0, RetryTransport was never installed at all, so
+# counting here undercounted every real request to 0).

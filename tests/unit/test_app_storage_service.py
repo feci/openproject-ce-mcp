@@ -452,6 +452,29 @@ async def test_update_preview_also_denied_without_admin_write_enabled() -> None:
 
 
 @pytest.mark.asyncio
+async def test_update_denies_admin_write_before_checking_a_hidden_field() -> None:
+    """Regression (Codex review round 8): update() checked
+    hidden_fields.ensure_field_writable BEFORE access.ensure_write_enabled,
+    the opposite order from create() (which has this pre-check as its first
+    line). A caller without ADMIN_WRITE enabled AND with "name"/"host"
+    hidden got InvalidInputError ([VALIDATION_FAILED]) instead of the
+    correct PermissionDeniedError ([CAPABILITY_DISABLED]) -- the same bug
+    class already fixed in GroupService.create() (5a064bd). Neither
+    existing denial test above covers this exact combination on its own:
+    test_update_confirm_denied_without_admin_write_enabled has no hidden
+    field, test_update_rejects_when_host_field_is_hidden has admin_write
+    enabled."""
+    settings = dataclasses.replace(make_settings(), hidden_fields={"storage": ("name",)})  # admin_write defaults False
+    api = _FakeStorageApi()
+    service = _service(api, settings=settings)
+
+    with pytest.raises(PermissionDeniedError):
+        await service.update(storage_id=3, name="Renamed", confirm=True)
+
+    assert api.commit_update_calls == []
+
+
+@pytest.mark.asyncio
 async def test_update_rejects_when_host_field_is_hidden() -> None:
     settings = dataclasses.replace(_admin_write_settings(), hidden_fields={"storage": ("host",)})
     api = _FakeStorageApi()

@@ -261,16 +261,28 @@ class OpenProjectClient:
         self._priorities_cache: SingletonCache[list[PriorityRecord]] = SingletonCache()
         self._instance_configuration_cache: SingletonCache[InstanceConfigurationRecord] = SingletonCache()
 
-        # Wrap transport with retry logic if max_retries > 0
+        # CountingTransport wraps the innermost real transport UNCONDITIONALLY --
+        # not just when retries are enabled -- so http_request_counter reflects
+        # every real network attempt regardless of OPENPROJECT_MAX_RETRIES. See
+        # counting_transport.py's own docstring for why this used to be missed
+        # entirely at MAX_RETRIES=0.
+        from .counting_transport import CountingTransport
+
+        if not isinstance(transport, CountingTransport):
+            base_transport = transport or httpx.AsyncHTTPTransport()
+            transport = CountingTransport(base_transport)
+
+        # Wrap with retry logic if max_retries > 0 -- layered OUTSIDE
+        # CountingTransport, so each individual retry attempt still counts as
+        # its own real request (RetryTransport calls the wrapped transport's
+        # handle_async_request once per attempt).
         if settings.max_retries > 0:
             from .retry_transport import RetryTransport
 
             # Don't double-wrap if user already provided RetryTransport
             if not isinstance(transport, RetryTransport):
-                # If no transport provided, use default httpx transport
-                base_transport = transport or httpx.AsyncHTTPTransport()
                 transport = RetryTransport(
-                    wrapped_transport=base_transport,
+                    wrapped_transport=transport,
                     max_retries=settings.max_retries,
                     base_delay=settings.retry_base_delay,
                     max_delay=settings.retry_max_delay,

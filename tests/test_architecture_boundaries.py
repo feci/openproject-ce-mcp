@@ -36,7 +36,13 @@ APP = SRC / "app"
 # coordinator methods (get_my_project_access, get_project_work_package_context),
 # not by any per-domain logic (every domain method delegates to a Service); retry_transport.py is
 # wrapped-not-replaced by design; doctor.py/setup_cli.py are named, pre-existing exceptions.
-_PRE_EXISTING_HTTPX_IMPORTERS = {"client.py", "retry_transport.py", "doctor.py", "setup_cli.py"}
+_PRE_EXISTING_HTTPX_IMPORTERS = {
+    "client.py",
+    "retry_transport.py",
+    "counting_transport.py",
+    "doctor.py",
+    "setup_cli.py",
+}
 _HTTPX_TRANSPORT_FILE = Path("transport") / "httpx_transport.py"
 
 # Layer dependency rules: which app/<layer> dirs a given layer may import
