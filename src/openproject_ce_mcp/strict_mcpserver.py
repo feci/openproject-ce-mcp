@@ -94,7 +94,16 @@ class StrictMCPServer(MCPServer):
         except Exception:
             request_id = None
         tool = self._tool_manager.get_tool(name)
-        if tool is not None:
+        if tool is None:
+            # A genuinely unknown/misspelled/stale tool name -- the SDK's
+            # own "Unknown tool" ToolError below (raised inside
+            # super().call_tool()) is left as the actual error surfaced to
+            # the caller, unchanged; this only ensures the documented
+            # one-line-per-tool-call structured-logging contract still
+            # covers this dispatch failure too, the same as every other
+            # coded error path in this method already does.
+            self._emit_dispatch_error_log(name, start, request_id, error_code="TOOL_NOT_FOUND", layer="dispatch")
+        else:
             allowed = set(tool.parameters.get("properties", {}).keys())
             unknown = sorted(set(arguments.keys()) - allowed)
             if unknown:
@@ -103,13 +112,13 @@ class StrictMCPServer(MCPServer):
                     f"'{name}': {', '.join(unknown)}. "
                     f"Allowed arguments: {', '.join(sorted(allowed))}"
                 )
-                self._emit_dispatch_validation_log(name, start, request_id)
+                self._emit_dispatch_error_log(name, start, request_id)
                 raise ValueError(message)
         try:
             return await super().call_tool(name, arguments, context)
         except ToolError as exc:
             if isinstance(exc.__cause__, pydantic.ValidationError):
-                self._emit_dispatch_validation_log(name, start, request_id)
+                self._emit_dispatch_error_log(name, start, request_id)
                 field_errors = "; ".join(
                     f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}" for err in exc.__cause__.errors()
                 )
@@ -117,7 +126,9 @@ class StrictMCPServer(MCPServer):
             raise
 
     @staticmethod
-    def _emit_dispatch_validation_log(tool: str, start: float, request_id: Any) -> None:
+    def _emit_dispatch_error_log(
+        tool: str, start: float, request_id: Any, *, error_code: str = "VALIDATION_FAILED", layer: str = "validation"
+    ) -> None:
         # verify_strict_dispatch() deliberately calls this exact tool name
         # with an unknown argument on EVERY server startup and doctor
         # handshake, to prove the validation gate above is actually wired
@@ -126,8 +137,8 @@ class StrictMCPServer(MCPServer):
         # tool_call record on every healthy launch would misrepresent
         # ordinary startup as a tool failure to any monitoring watching this
         # log stream. Suppressed by name, not by silencing this method
-        # entirely, so a genuine caller-triggered VALIDATION_FAILED for any
-        # other tool is still logged exactly as before.
+        # entirely, so a genuine caller-triggered error for any other tool
+        # (or tool name) is still logged exactly as before.
         if tool == _STRICT_DISPATCH_PROBE_NAME:
             return
         try:
@@ -135,8 +146,8 @@ class StrictMCPServer(MCPServer):
                 "tool": tool,
                 "status": "error",
                 "duration_ms": int((time.monotonic() - start) * 1000),
-                "error_code": "VALIDATION_FAILED",
-                "layer": "validation",
+                "error_code": error_code,
+                "layer": layer,
                 "http_requests": http_request_counter.current(),
                 "project_scope": policy_observation.current_project_scope(),
                 "policy_decision": policy_observation.current_policy_decision(),

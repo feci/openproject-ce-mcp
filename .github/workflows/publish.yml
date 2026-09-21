@@ -281,7 +281,15 @@ jobs:
           # transiently) -- that specific case is a successful re-run, not
           # a job failure, so it's matched and swallowed explicitly; any
           # OTHER gh pr create failure still fails the job normally.
+          # --head is required here: the "branch already exists" case above
+          # deliberately never checks the existing remote branch out
+          # locally (it needs no new commit), so the local working tree
+          # stays on the tap's default branch -- gh pr create without
+          # --head would infer that default branch as the PR's head
+          # instead of the actual bump branch, and either fail or (worse)
+          # open a PR with the wrong, empty diff.
           if ! output="$(gh pr create --title "openproject-ce-mcp ${version}" \
+            --head "$branch" \
             --body "Automated bump after the openproject-ce-mcp ${version} PyPI release." 2>&1)"; then
             if echo "$output" | grep -qi "already exists"; then
               echo "PR for $branch already exists (a prior run already opened it) -- treating as success."

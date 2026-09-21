@@ -114,6 +114,30 @@ async def test_unknown_tool_name_keeps_standard_error(strict_mcp: StrictMCPServe
     assert "Unknown tool" in _text(result)
 
 
+async def test_unknown_tool_name_is_still_logged_as_a_structured_dispatch_failure(
+    strict_mcp: StrictMCPServer, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Regression (Codex review round 15): a genuinely unknown/misspelled/
+    stale tool name reached the SDK's own "Unknown tool" ToolError (whose
+    __cause__ is never a pydantic.ValidationError) with no structured log
+    entry at all -- the documented one-line-per-tool-call contract silently
+    didn't cover this dispatch failure, leaving misspelled or stale tool
+    names invisible to OPENPROJECT_LOG_FORMAT=json monitoring. The client-
+    facing error itself is unchanged (still the SDK's own "Unknown tool"
+    message, not [VALIDATION_FAILED] -- see the test above)."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="openproject_ce_mcp.strict_mcpserver"):
+        result = await _dispatch(strict_mcp, "does_not_exist", {"anything": 1})
+
+    assert result.is_error is True
+    assert "VALIDATION_FAILED" not in _text(result)
+    structured = [r.structured for r in caplog.records if hasattr(r, "structured")]
+    assert len(structured) == 1
+    assert structured[0]["tool"] == "does_not_exist"
+    assert structured[0]["error_code"] == "TOOL_NOT_FOUND"
+
+
 async def test_missing_required_argument_is_sanitized_and_logged(
     strict_mcp: StrictMCPServer, caplog: pytest.LogCaptureFixture
 ) -> None:
