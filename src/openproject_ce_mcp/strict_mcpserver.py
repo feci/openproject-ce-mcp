@@ -16,6 +16,11 @@ from .logging_support import ToolCallLogRecord
 
 logger = logging.getLogger(__name__)
 
+# verify_strict_dispatch's self-test tool name, hoisted to module level so
+# call_tool below can recognize and skip logging it -- see the log-suppression
+# comment at that call site for why.
+_STRICT_DISPATCH_PROBE_NAME = "__strict_mcpserver_probe__"
+
 
 class StrictMCPServer(MCPServer):
     """MCPServer with fail-closed argument validation.
@@ -113,6 +118,18 @@ class StrictMCPServer(MCPServer):
 
     @staticmethod
     def _emit_dispatch_validation_log(tool: str, start: float, request_id: Any) -> None:
+        # verify_strict_dispatch() deliberately calls this exact tool name
+        # with an unknown argument on EVERY server startup and doctor
+        # handshake, to prove the validation gate above is actually wired
+        # in -- that self-test rejection is expected, internal, and never
+        # caller-triggered, so logging it as a WARNING-level structured
+        # tool_call record on every healthy launch would misrepresent
+        # ordinary startup as a tool failure to any monitoring watching this
+        # log stream. Suppressed by name, not by silencing this method
+        # entirely, so a genuine caller-triggered VALIDATION_FAILED for any
+        # other tool is still logged exactly as before.
+        if tool == _STRICT_DISPATCH_PROBE_NAME:
+            return
         try:
             record: ToolCallLogRecord = {
                 "tool": tool,
@@ -182,7 +199,7 @@ async def verify_strict_dispatch(mcp: StrictMCPServer) -> None:
     to catch SDK changes to serialization/dispatch/middleware this direct
     call cannot see.
     """
-    probe_name = "__strict_mcpserver_probe__"
+    probe_name = _STRICT_DISPATCH_PROBE_NAME
 
     @mcp.tool(name=probe_name)
     async def _probe(known: str = "x") -> str:  # pragma: no cover - never runs

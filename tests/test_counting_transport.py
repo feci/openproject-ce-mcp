@@ -267,3 +267,77 @@ async def test_client_with_no_transport_argument_at_all_still_counts_correctly()
         assert find_in_chain(inner, RetryTransport) is not None
     finally:
         await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_client_with_no_transport_preserves_verify_ssl_false() -> None:
+    """Regression (Codex review round 11): with no caller-supplied
+    transport, an earlier version of this code always constructed its own
+    bare httpx.AsyncHTTPTransport() (no verify= argument at all) rather than
+    letting httpx.AsyncClient build its own verify_ssl-configured default --
+    OPENPROJECT_VERIFY_SSL=false silently stopped having any effect on the
+    transport actually used for real requests."""
+    import ssl
+
+    client = OpenProjectClient(_settings(max_retries=0, verify_ssl="false"))
+    try:
+        leaf = client._http._transport.wrapped_transport
+        assert isinstance(leaf, httpx.AsyncHTTPTransport)
+        ssl_context = leaf._pool._ssl_context
+        assert ssl_context.verify_mode == ssl.CERT_NONE
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_client_with_no_transport_still_resolves_https_proxy_env_var(monkeypatch) -> None:
+    """Regression (Codex review round 11): an earlier version of this code
+    passed an explicit `transport=`/`mounts=` to httpx.AsyncClient's own
+    constructor whenever no caller transport was supplied -- either one
+    disabled httpx's own environment-variable-based proxy resolution
+    (`allow_env_proxies = trust_env and transport is None` inside
+    AsyncClient.__init__), or (for the `mounts={"all://": ...}` variant)
+    let a real, more specific env-proxy mount like "https://" win over the
+    wildcard and route proxied requests around CountingTransport entirely.
+    Neither `transport=` nor `mounts=` may be passed to the AsyncClient
+    constructor when there's no caller-supplied transport -- wrapping must
+    happen by mutating `self._http._transport`/`_mounts` AFTER
+    construction, so httpx's own proxy resolution runs unmodified first."""
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example.com:8080")
+
+    client = OpenProjectClient(_settings(max_retries=0))
+    try:
+        selected = client._http._transport_for_url(httpx.URL("https://op.example.com/api/v3/x"))
+        assert isinstance(selected, CountingTransport)
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_client_counts_the_innermost_of_two_nested_caller_retry_transports() -> None:
+    """Regression (Codex review round 11): find_in_chain returns the
+    OUTERMOST match, but CountingTransport must sit inside the INNERMOST
+    RetryTransport -- a chain can validly nest more than one (however
+    unusual), and only the layer actually closest to the real network sees
+    every genuine retry attempt. Placed at the outer layer instead, the
+    inner layer's own retries (real network calls) go uncounted."""
+    call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return httpx.Response(503)
+        return httpx.Response(200, json={"id": 1, "name": "Someone"})
+
+    innermost_retry = RetryTransport(httpx.MockTransport(handler), max_retries=2, base_delay=0.01)
+    outer_retry = RetryTransport(innermost_retry, max_retries=2, base_delay=0.01)
+    client = OpenProjectClient(_settings(max_retries=2), transport=outer_retry)
+    http_request_counter.reset()
+    try:
+        await client.current_user.get_current_user()
+    finally:
+        await client.aclose()
+
+    assert call_count == 2
+    assert http_request_counter.current() == 2

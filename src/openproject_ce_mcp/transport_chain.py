@@ -46,7 +46,7 @@ class _WrapsAnotherTransport(Protocol):
 
 
 def find_in_chain(transport: httpx.AsyncBaseTransport, wrapper_type: type[_T]) -> _T | None:
-    """Return the first instance of `wrapper_type` found by walking
+    """Return the OUTERMOST instance of `wrapper_type` found by walking
     `transport` and then its `.wrapped_transport` chain, or `None` if no
     layer in the chain is an instance of it."""
     current: httpx.AsyncBaseTransport | None = transport
@@ -55,6 +55,28 @@ def find_in_chain(transport: httpx.AsyncBaseTransport, wrapper_type: type[_T]) -
             return current
         current = current.wrapped_transport if isinstance(current, _WrapsAnotherTransport) else None
     return None
+
+
+def find_innermost_in_chain(transport: httpx.AsyncBaseTransport, wrapper_type: type[_T]) -> _T | None:
+    """Return the INNERMOST instance of `wrapper_type` in the chain (the one
+    closest to the real network), or `None` if none is present.
+
+    Matters specifically for `RetryTransport`: a chain can validly nest more
+    than one (`RetryTransport(RetryTransport(...))`, however unusual), and
+    `CountingTransport` must sit inside the innermost one to count every
+    real network attempt that innermost layer's own retries make -- placed
+    at the outermost `RetryTransport` instead (what `find_in_chain` alone
+    would find), it only counts once per the OUTER layer's own attempts,
+    each of which may itself trigger several real requests via the inner
+    layer's retries, undercounting the true total the same way every prior
+    round's bug did."""
+    innermost: _T | None = None
+    current: httpx.AsyncBaseTransport | None = transport
+    while current is not None:
+        if isinstance(current, wrapper_type):
+            innermost = current
+        current = current.wrapped_transport if isinstance(current, _WrapsAnotherTransport) else None
+    return innermost
 
 
 def remove_from_chain(transport: httpx.AsyncBaseTransport, wrapper_type: type) -> httpx.AsyncBaseTransport:

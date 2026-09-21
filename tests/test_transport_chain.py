@@ -13,7 +13,7 @@ import pytest
 
 from openproject_ce_mcp.counting_transport import CountingTransport
 from openproject_ce_mcp.retry_transport import RetryTransport
-from openproject_ce_mcp.transport_chain import find_in_chain, remove_from_chain
+from openproject_ce_mcp.transport_chain import find_in_chain, find_innermost_in_chain, remove_from_chain
 
 
 def _leaf() -> httpx.AsyncBaseTransport:
@@ -42,6 +42,30 @@ def test_find_in_chain_returns_none_when_absent() -> None:
 def test_find_in_chain_stops_at_a_leaf_with_no_wrapped_transport_attribute() -> None:
     leaf = _leaf()
     assert find_in_chain(leaf, CountingTransport) is None
+
+
+def test_find_innermost_in_chain_returns_the_deepest_match() -> None:
+    """Regression (Codex review round 11): find_in_chain alone returns the
+    OUTERMOST match, which is wrong for RetryTransport specifically --
+    client.py needs the one closest to the real network so CountingTransport
+    ends up seeing every genuine retry attempt that layer makes."""
+    leaf = _leaf()
+    inner_retry = RetryTransport(leaf)
+    outer_retry = RetryTransport(inner_retry)
+    assert find_in_chain(outer_retry, RetryTransport) is outer_retry
+    assert find_innermost_in_chain(outer_retry, RetryTransport) is inner_retry
+
+
+def test_find_innermost_in_chain_matches_find_in_chain_with_a_single_layer() -> None:
+    leaf = _leaf()
+    retry = RetryTransport(leaf)
+    assert find_innermost_in_chain(retry, RetryTransport) is retry
+
+
+def test_find_innermost_in_chain_returns_none_when_absent() -> None:
+    leaf = _leaf()
+    counting = CountingTransport(leaf)
+    assert find_innermost_in_chain(counting, RetryTransport) is None
 
 
 def test_remove_from_chain_removes_the_outermost_layer() -> None:

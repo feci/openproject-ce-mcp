@@ -307,6 +307,40 @@ async def test_verify_strict_dispatch_passes_on_live_app() -> None:
     assert "__strict_mcpserver_probe__" not in {t.name for t in mcp._tool_manager.list_tools()}
 
 
+async def test_verify_strict_dispatch_does_not_emit_a_warning_log(caplog: pytest.LogCaptureFixture) -> None:
+    """Regression (Codex review round 11): verify_strict_dispatch's own
+    internal self-test deliberately triggers the exact same
+    [VALIDATION_FAILED] rejection path a real caller's bad request would --
+    without this suppression, every healthy server startup and doctor
+    handshake would emit a structured WARNING log record that looks
+    identical to a genuine tool-call failure, misleading anything watching
+    this log stream (monitoring, alerting) into treating a normal startup
+    as an error."""
+    import logging
+
+    mcp = create_app(make_settings())
+    with caplog.at_level(logging.WARNING, logger="openproject_ce_mcp.strict_mcpserver"):
+        await verify_strict_dispatch(mcp)
+
+    assert caplog.records == []
+
+
+async def test_a_real_callers_validation_failure_is_still_logged_after_the_suppression(
+    strict_mcp: StrictMCPServer, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The suppression above is scoped to the internal probe tool's exact
+    name only -- it must not accidentally silence logging for a genuine,
+    caller-triggered VALIDATION_FAILED on any other tool."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="openproject_ce_mcp.strict_mcpserver"):
+        await _dispatch(strict_mcp, "plain_tool", {"name": "World", "filters": ["x"]})
+
+    structured = [r.structured for r in caplog.records if hasattr(r, "structured")]
+    assert len(structured) == 1
+    assert structured[0]["tool"] == "plain_tool"
+
+
 async def test_verify_strict_dispatch_raises_if_dispatch_not_enforced() -> None:
     """If a future SDK/refactor made call_tool validation a no-op, the startup
     check must fail loudly rather than silently accept it."""

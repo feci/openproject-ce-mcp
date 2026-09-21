@@ -278,47 +278,102 @@ class OpenProjectClient:
         # this replaced.
         from .counting_transport import CountingTransport
         from .retry_transport import RetryTransport
-        from .transport_chain import find_in_chain, remove_from_chain
+        from .transport_chain import find_innermost_in_chain, remove_from_chain
 
-        base_transport = remove_from_chain(transport or httpx.AsyncHTTPTransport(), CountingTransport)
-
-        existing_retry = find_in_chain(base_transport, RetryTransport)
-        if existing_retry is not None:
-            # A caller-supplied RetryTransport anywhere in the chain already
-            # defines the retry policy -- OPENPROJECT_MAX_RETRIES is not
-            # applied on top of it (this codebase never had a way to combine
-            # two different retry policies meaningfully, and layering ours
-            # outside theirs would multiply real network attempts).
-            existing_retry.wrapped_transport = CountingTransport(existing_retry.wrapped_transport)
-            transport = base_transport
+        # A caller who explicitly passed their own `transport` gets exactly
+        # what they asked for -- opting into a custom transport already
+        # means opting out of httpx's own verify=/trust_env-based proxy
+        # resolution, same as it always has (an explicit `transport=`
+        # bypasses those regardless of anything this class does). This
+        # branch exists ONLY for that explicit-caller-transport case.
+        if transport is not None:
+            base_transport = remove_from_chain(transport, CountingTransport)
+            existing_retry = find_innermost_in_chain(base_transport, RetryTransport)
+            if existing_retry is not None:
+                # A caller-supplied RetryTransport anywhere in the chain
+                # already defines the retry policy -- OPENPROJECT_MAX_RETRIES
+                # is not applied on top of it (this codebase never had a way
+                # to combine two different retry policies meaningfully, and
+                # layering ours outside theirs would multiply real network
+                # attempts). The INNERMOST one specifically (find_innermost_
+                # in_chain, not find_in_chain) -- a chain can validly nest
+                # more than one RetryTransport, and CountingTransport must
+                # sit inside the one actually closest to the real network to
+                # count every real attempt, not just the outer layer's own.
+                existing_retry.wrapped_transport = CountingTransport(existing_retry.wrapped_transport)
+            else:
+                base_transport = CountingTransport(base_transport)
+                if settings.max_retries > 0:
+                    base_transport = RetryTransport(
+                        wrapped_transport=base_transport,
+                        max_retries=settings.max_retries,
+                        base_delay=settings.retry_base_delay,
+                        max_delay=settings.retry_max_delay,
+                    )
+            self._http = httpx.AsyncClient(
+                base_url=f"{settings.api_base_url.rstrip('/')}/",
+                headers={
+                    "Accept": "application/hal+json, application/json",
+                    "Authorization": (
+                        f"Basic {__import__('base64').b64encode(f'apikey:{settings.api_token}'.encode()).decode()}"
+                    ),
+                    "User-Agent": f"openproject-ce-mcp/{__version__}",
+                },
+                timeout=httpx.Timeout(settings.timeout),
+                verify=settings.verify_ssl,
+                follow_redirects=True,
+                transport=base_transport,
+            )
         else:
-            # No caller-supplied retry policy anywhere in the chain -- apply
-            # this codebase's own if configured, layered OUTSIDE counting so
-            # each individual retry attempt still counts as its own real
-            # request (RetryTransport calls the wrapped transport's
-            # handle_async_request once per attempt).
-            base_transport = CountingTransport(base_transport)
-            if settings.max_retries > 0:
-                base_transport = RetryTransport(
-                    wrapped_transport=base_transport,
-                    max_retries=settings.max_retries,
-                    base_delay=settings.retry_base_delay,
-                    max_delay=settings.retry_max_delay,
-                )
-            transport = base_transport
+            # No caller-supplied transport -- CountingTransport still must be
+            # installed unconditionally (OPM-2709), but NEVER by passing an
+            # explicit `transport=`/`mounts=` to httpx.AsyncClient's own
+            # constructor here: either one, tried in earlier versions of
+            # this code, silently broke httpx's own environment-variable-
+            # based proxy resolution (`allow_env_proxies = trust_env and
+            # transport is None` in AsyncClient.__init__ -- a single
+            # `mounts={"all://": ...}` also loses because a real, more
+            # specific env-proxy mount like "https://" is matched over the
+            # wildcard "all://" pattern, silently routing every proxied
+            # request around our transport entirely and back to
+            # undercounting). Constructing AsyncClient with NEITHER
+            # `transport=` nor `mounts=` lets it build its OWN verify_ssl-
+            # and env-proxy-configured transport(s) exactly as it always
+            # has, then wrapping `self._http._transport` and every value in
+            # `self._http._mounts` IN PLACE afterward reaches every real
+            # request path (the base transport for unproxied schemes, and
+            # each scheme-specific proxy transport) without ever
+            # influencing which one httpx picks for a given URL.
+            self._http = httpx.AsyncClient(
+                base_url=f"{settings.api_base_url.rstrip('/')}/",
+                headers={
+                    "Accept": "application/hal+json, application/json",
+                    "Authorization": (
+                        f"Basic {__import__('base64').b64encode(f'apikey:{settings.api_token}'.encode()).decode()}"
+                    ),
+                    "User-Agent": f"openproject-ce-mcp/{__version__}",
+                },
+                timeout=httpx.Timeout(settings.timeout),
+                verify=settings.verify_ssl,
+                follow_redirects=True,
+            )
 
-        self._http = httpx.AsyncClient(
-            base_url=f"{settings.api_base_url.rstrip('/')}/",
-            headers={
-                "Accept": "application/hal+json, application/json",
-                "Authorization": f"Basic {__import__('base64').b64encode(f'apikey:{settings.api_token}'.encode()).decode()}",
-                "User-Agent": f"openproject-ce-mcp/{__version__}",
-            },
-            timeout=httpx.Timeout(settings.timeout),
-            verify=settings.verify_ssl,
-            follow_redirects=True,
-            transport=transport,
-        )
+            def _wrap(t: httpx.AsyncBaseTransport) -> httpx.AsyncBaseTransport:
+                wrapped: httpx.AsyncBaseTransport = CountingTransport(t)
+                if settings.max_retries > 0:
+                    wrapped = RetryTransport(
+                        wrapped_transport=wrapped,
+                        max_retries=settings.max_retries,
+                        base_delay=settings.retry_base_delay,
+                        max_delay=settings.retry_max_delay,
+                    )
+                return wrapped
+
+            self._http._transport = _wrap(self._http._transport)  # noqa: SLF001
+            self._http._mounts = {  # noqa: SLF001
+                pattern: (_wrap(mount_transport) if mount_transport is not None else None)
+                for pattern, mount_transport in self._http._mounts.items()  # noqa: SLF001
+            }
 
         # HttpxTransport wraps the SAME httpx.AsyncClient
         # constructed above (one connection pool, not two).
