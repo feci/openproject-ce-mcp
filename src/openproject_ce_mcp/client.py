@@ -751,6 +751,7 @@ class OpenProjectClient:
             meeting_api=self._meeting_api,
             settings=settings,
             project_id_to_identifier=self._project_id_to_identifier,
+            resolve_work_package_id=self._work_package_resolver.resolve_id,
             api_prefix=self._api_prefix,
         )
 

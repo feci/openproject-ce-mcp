@@ -20,7 +20,6 @@ from __future__ import annotations
 import functools
 import inspect
 import json
-import re
 from collections.abc import Callable, Iterable
 from dataclasses import fields as dataclass_fields
 from dataclasses import is_dataclass
@@ -159,12 +158,24 @@ _ERROR_CATEGORY: dict[type[Exception], str] = {
     OpenProjectServerError: "server_error",
     OpenProjectError: "openproject_error",  # base fallback
 }
-_CATEGORY_PREFIX_RE = re.compile(r"^\[[a-z_]+\]\s")
 
 
 def _prefix(category: str, message: str) -> str:
-    if _CATEGORY_PREFIX_RE.match(message):
-        return message  # already categorized; don't double-prefix
+    """Prepend `[category] ` unless `message` is already prefixed with
+    EXACTLY that category -- avoiding a double `[validation_error]
+    [validation_error] ...` when a message built elsewhere already carries
+    the same tag before reaching here.
+
+    Deliberately does NOT match ANY `[lowercase_word] ` bracket token, only
+    this call's own `category` -- a tool-body validator's message can echo
+    back caller-supplied text (a custom field key, a filter value), and a
+    prior, looser regex here would have treated any such text that happened
+    to look like `[some_token] ...` as "already categorized," silently
+    replacing the real, correct category with a caller-influenced,
+    misleading one in the message the agent actually sees.
+    """
+    if message.startswith(f"[{category}] "):
+        return message
     return f"[{category}] {message}"
 
 

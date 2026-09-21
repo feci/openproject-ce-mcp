@@ -667,13 +667,33 @@ async def test_categorize_tool_errors_tags_validation_and_avoids_double_prefix()
     with pytest.raises(ValueError, match=r"^\[validation_error\] subject is required$"):
         await raw_validation(None)
 
-    # An already-categorized message must not be prefixed twice.
+    # A message already prefixed with THIS SAME category must not be
+    # prefixed twice.
     @_categorize_tool_errors
     async def already_tagged(_ctx):
-        raise ValueError("[not_found] gone")
+        raise ValueError("[validation_error] subject already validated upstream")
 
-    with pytest.raises(ValueError, match=r"^\[not_found\] gone$"):
+    with pytest.raises(ValueError, match=r"^\[validation_error\] subject already validated upstream$"):
         await already_tagged(None)
+
+
+@pytest.mark.asyncio
+async def test_categorize_tool_errors_does_not_treat_a_foreign_bracket_tag_as_already_categorized() -> None:
+    """Regression: a tool-body validator's raw ValueError message can echo
+    back caller-supplied text (a custom field key, a filter value). A
+    prior, looser implementation of _prefix treated ANY leading
+    `[lowercase_word] ` bracket token as "already categorized" and skipped
+    prefixing -- if that echoed-back text happened to look like a different
+    category tag (e.g. "[not_found] ..."), the real validation_error
+    category was silently dropped from the message the agent actually sees."""
+    from openproject_ce_mcp.tools_runtime import _categorize_tool_errors
+
+    @_categorize_tool_errors
+    async def raw_validation_with_foreign_looking_tag(_ctx):
+        raise ValueError("[not_found] the field you gave does not exist")
+
+    with pytest.raises(ValueError, match=r"^\[validation_error\] \[not_found\] the field you gave does not exist$"):
+        await raw_validation_with_foreign_looking_tag(None)
 
 
 def test_validate_sort_by_accepts_real_sortable_columns() -> None:

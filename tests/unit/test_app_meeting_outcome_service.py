@@ -130,12 +130,17 @@ class _FakeMeetingOutcomeApi:
         self.delete_calls.append(outcome_id)
 
 
+async def _resolve_work_package_id_ok(ref, *, write: bool = False) -> int:
+    return 99
+
+
 def _service(
     *,
     api: _FakeMeetingOutcomeApi | None = None,
     meeting_agenda_item_api: _FakeMeetingAgendaItemApi | None = None,
     meeting_api: _FakeMeetingApi | None = None,
     settings=None,
+    resolve_work_package_id=None,
 ) -> MeetingOutcomeService:
     return MeetingOutcomeService(
         api=api or _FakeMeetingOutcomeApi(),
@@ -143,6 +148,7 @@ def _service(
         meeting_api=meeting_api or _FakeMeetingApi(),
         settings=settings or make_settings(),
         project_id_to_identifier={6: "demo"},
+        resolve_work_package_id=resolve_work_package_id or _resolve_work_package_id_ok,
         api_prefix="/api/v3/",
     )
 
@@ -251,6 +257,28 @@ async def test_create_commit_with_confirm_calls_api_create() -> None:
 
 
 @pytest.mark.asyncio
+async def test_create_resolves_linked_work_package_id_with_write_scope() -> None:
+    """Regression: create() previously passed a raw, caller-supplied
+    work_package_id straight into the payload with NO resolver call at all
+    -- a writable meeting outcome could be linked to an arbitrary work
+    package entirely outside OPENPROJECT_WRITE_PROJECTS, with no scope
+    check whatsoever. Must resolve via resolve_work_package_id(...,
+    write=True), same as MeetingAgendaItemService's own equivalent link."""
+    api = _FakeMeetingOutcomeApi()
+    resolved: list[tuple] = []
+
+    async def resolve(ref, *, write: bool = False):
+        resolved.append((ref, write))
+        return 99
+
+    service = _service(api=api, resolve_work_package_id=resolve)
+
+    await service.create(agenda_item_id=21, kind="work_package", work_package_id="99", confirm=True)
+
+    assert resolved == [("99", True)]
+
+
+@pytest.mark.asyncio
 async def test_create_denies_write_when_grandparent_meeting_project_disallowed() -> None:
     settings = dataclasses.replace(make_settings(), write_projects=("other-project",))
     api = _FakeMeetingOutcomeApi()
@@ -281,6 +309,23 @@ async def test_update_preview_without_confirm_does_not_call_api_update() -> None
     result = await service.update(outcome_id=31, kind="action", confirm=False)
     assert result.state == "preview"
     assert api.update_calls == []
+
+
+@pytest.mark.asyncio
+async def test_update_resolves_linked_work_package_id_with_write_scope() -> None:
+    """Regression: same as create()'s own version of this test above."""
+    api = _FakeMeetingOutcomeApi()
+    resolved: list[tuple] = []
+
+    async def resolve(ref, *, write: bool = False):
+        resolved.append((ref, write))
+        return 99
+
+    service = _service(api=api, resolve_work_package_id=resolve)
+
+    await service.update(outcome_id=31, work_package_id="99", confirm=True)
+
+    assert resolved == [("99", True)]
 
 
 @pytest.mark.asyncio
