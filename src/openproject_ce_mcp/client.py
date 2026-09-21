@@ -261,45 +261,51 @@ class OpenProjectClient:
         self._priorities_cache: SingletonCache[list[PriorityRecord]] = SingletonCache()
         self._instance_configuration_cache: SingletonCache[InstanceConfigurationRecord] = SingletonCache()
 
-        # CountingTransport must sit INSIDE any RetryTransport (own or
-        # caller-supplied) so each individual retry attempt still counts as
-        # its own real request -- installing it OUTSIDE a caller-supplied
-        # RetryTransport, as an earlier version of this code did, hid that
-        # RetryTransport from the `isinstance` check just below, which then
-        # wrapped it in a SECOND, redundant RetryTransport (multiplying real
-        # network attempts) while only counting the outer layer's attempts,
-        # not the inner one's real retries. Handle the caller-supplied case
-        # FIRST and separately, before the normal no-caller-transport path
-        # below ever runs.
+        # Three successive review rounds each found a real bug in a prior
+        # version of this block trying to patch specific caller-supplied
+        # transport orderings in place with `isinstance` checks -- there is
+        # no bounded set of "the orderings a caller might use", so patching
+        # detected orderings one at a time cannot converge (a wrong-position
+        # CountingTransport still counts, just at the wrong place, so
+        # "is one present anywhere" is not sufficient -- its POSITION
+        # matters). Normalizing instead: unconditionally strip every
+        # existing CountingTransport layer out of whatever chain the caller
+        # supplied (its position is never trusted), then add back exactly
+        # one at the one position (inside the innermost RetryTransport if
+        # the caller supplied one, otherwise innermost overall) that is
+        # actually guaranteed to count every real retry attempt correctly.
+        # See transport_chain.py's own docstring for the specific orderings
+        # this replaced.
         from .counting_transport import CountingTransport
         from .retry_transport import RetryTransport
+        from .transport_chain import find_in_chain, remove_from_chain
 
-        if isinstance(transport, RetryTransport):
-            # Caller already brought their own retry policy -- count each
-            # handle_async_request call this RetryTransport makes by
-            # wrapping its OWN inner transport (RetryTransport.wrapped_transport
-            # is public exactly for this), not by wrapping the RetryTransport
-            # from outside (which would only count once per logical
-            # operation, undercounting real retried requests the same way
-            # the original bug did).
-            transport.wrapped_transport = CountingTransport(transport.wrapped_transport)
+        base_transport = remove_from_chain(transport or httpx.AsyncHTTPTransport(), CountingTransport)
+
+        existing_retry = find_in_chain(base_transport, RetryTransport)
+        if existing_retry is not None:
+            # A caller-supplied RetryTransport anywhere in the chain already
+            # defines the retry policy -- OPENPROJECT_MAX_RETRIES is not
+            # applied on top of it (this codebase never had a way to combine
+            # two different retry policies meaningfully, and layering ours
+            # outside theirs would multiply real network attempts).
+            existing_retry.wrapped_transport = CountingTransport(existing_retry.wrapped_transport)
+            transport = base_transport
         else:
-            if not isinstance(transport, CountingTransport):
-                base_transport = transport or httpx.AsyncHTTPTransport()
-                transport = CountingTransport(base_transport)
-
-            # Wrap with this codebase's own retry logic if max_retries > 0 --
-            # layered OUTSIDE CountingTransport, so each individual retry
-            # attempt still counts as its own real request (RetryTransport
-            # calls the wrapped transport's handle_async_request once per
-            # attempt).
+            # No caller-supplied retry policy anywhere in the chain -- apply
+            # this codebase's own if configured, layered OUTSIDE counting so
+            # each individual retry attempt still counts as its own real
+            # request (RetryTransport calls the wrapped transport's
+            # handle_async_request once per attempt).
+            base_transport = CountingTransport(base_transport)
             if settings.max_retries > 0:
-                transport = RetryTransport(
-                    wrapped_transport=transport,
+                base_transport = RetryTransport(
+                    wrapped_transport=base_transport,
                     max_retries=settings.max_retries,
                     base_delay=settings.retry_base_delay,
                     max_delay=settings.retry_max_delay,
                 )
+            transport = base_transport
 
         self._http = httpx.AsyncClient(
             base_url=f"{settings.api_base_url.rstrip('/')}/",

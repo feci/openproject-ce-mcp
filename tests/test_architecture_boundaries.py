@@ -35,11 +35,15 @@ APP = SRC / "app"
 # now only used by its shared _get/_post/_request transport primitives and its two cross-service
 # coordinator methods (get_my_project_access, get_project_work_package_context),
 # not by any per-domain logic (every domain method delegates to a Service); retry_transport.py is
-# wrapped-not-replaced by design; doctor.py/setup_cli.py are named, pre-existing exceptions.
+# wrapped-not-replaced by design; transport_chain.py is a generic helper over
+# httpx.AsyncBaseTransport (typing only -- no request/response handling of its own) shared by
+# client.py/counting_transport.py/retry_transport.py, so it belongs in the same non-app/ transport
+# grouping as they do; doctor.py/setup_cli.py are named, pre-existing exceptions.
 _PRE_EXISTING_HTTPX_IMPORTERS = {
     "client.py",
     "retry_transport.py",
     "counting_transport.py",
+    "transport_chain.py",
     "doctor.py",
     "setup_cli.py",
 }

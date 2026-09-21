@@ -164,3 +164,106 @@ async def test_client_does_not_double_wrap_a_caller_supplied_retry_transport() -
     # not 9 (which a (2+1) x (2+1) double-wrap would produce).
     assert call_count == 3
     assert http_request_counter.current() == 3
+
+
+@pytest.mark.asyncio
+async def test_client_recounts_correctly_when_caller_wraps_retry_transport_in_counting_transport() -> None:
+    """Regression (Codex review round 10): a caller-supplied
+    CountingTransport(RetryTransport(...)) -- the OPPOSITE nesting order
+    from the case above -- is a valid chain a caller could build. Round 9's
+    fix only recognized a bare RetryTransport at the top of the chain; here
+    the top-level object is CountingTransport, so round 9's isinstance
+    check took the "else" branch, correctly declined to add a second
+    CountingTransport, but then still added an EXTRA RetryTransport on top
+    of the caller's own retry-capable transport (since it never looked
+    inside to find the existing RetryTransport), reproducing the exact same
+    (max_retries+1)^2 network-attempt multiplication as the round 9 bug,
+    just via a different nesting order."""
+    call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        return httpx.Response(503)
+
+    inner_retry = RetryTransport(httpx.MockTransport(handler), max_retries=2, base_delay=0.01)
+    caller_transport = CountingTransport(inner_retry)
+    client = OpenProjectClient(_settings(max_retries=2), transport=caller_transport)
+    http_request_counter.reset()
+    try:
+        with pytest.raises(Exception):  # noqa: B017, PT011
+            await client.current_user.get_current_user()
+    finally:
+        await client.aclose()
+
+    assert call_count == 3
+    assert http_request_counter.current() == 3
+
+
+@pytest.mark.asyncio
+async def test_client_does_not_double_count_when_caller_wraps_counting_transport_in_retry_transport() -> None:
+    """Regression (Codex review round 10): the opposite ordering,
+    RetryTransport(CountingTransport(...)) -- a caller-supplied
+    CountingTransport nested INSIDE their own RetryTransport. Round 9's fix
+    unconditionally injected a second CountingTransport around the caller's
+    existing one (`transport.wrapped_transport = CountingTransport(...)`
+    with no check for an existing one), so every real attempt was counted
+    twice even though the actual network call count was correct."""
+    call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        return httpx.Response(200, json={"id": 1, "name": "Someone"})
+
+    inner_counting = CountingTransport(httpx.MockTransport(handler))
+    caller_transport = RetryTransport(inner_counting, max_retries=2, base_delay=0.01)
+    client = OpenProjectClient(_settings(max_retries=2), transport=caller_transport)
+    http_request_counter.reset()
+    try:
+        await client.current_user.get_current_user()
+    finally:
+        await client.aclose()
+
+    assert call_count == 1
+    assert http_request_counter.current() == 1
+
+
+@pytest.mark.asyncio
+async def test_client_applies_own_retry_policy_over_a_bare_caller_counting_transport() -> None:
+    """A caller can supply just a CountingTransport with no retry policy at
+    all -- this codebase's own OPENPROJECT_MAX_RETRIES should still apply
+    on top of it, without adding a second CountingTransport."""
+    call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        return httpx.Response(200, json={"id": 1, "name": "Someone"})
+
+    caller_transport = CountingTransport(httpx.MockTransport(handler))
+    client = OpenProjectClient(_settings(max_retries=2), transport=caller_transport)
+    http_request_counter.reset()
+    try:
+        await client.current_user.get_current_user()
+    finally:
+        await client.aclose()
+
+    assert call_count == 1
+    assert http_request_counter.current() == 1
+
+
+@pytest.mark.asyncio
+async def test_client_with_no_transport_argument_at_all_still_counts_correctly() -> None:
+    """The real default path (transport=None, hitting the actual network via
+    httpx.AsyncHTTPTransport) must also construct cleanly and end up with
+    exactly one CountingTransport in its chain."""
+    from openproject_ce_mcp.transport_chain import find_in_chain
+
+    client = OpenProjectClient(_settings(max_retries=2))
+    try:
+        inner = client._http._transport
+        assert find_in_chain(inner, CountingTransport) is not None
+        assert find_in_chain(inner, RetryTransport) is not None
+    finally:
+        await client.aclose()

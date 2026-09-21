@@ -26,11 +26,17 @@ class CountingTransport(httpx.AsyncBaseTransport):
     request is a real HTTP request that reached the network, not a no-op."""
 
     def __init__(self, wrapped_transport: httpx.AsyncBaseTransport) -> None:
-        self._transport = wrapped_transport
+        # Public, matching RetryTransport.wrapped_transport (same rename
+        # rationale: client.py's transport_chain.find_in_chain walks this
+        # attribute name on any transport that has it, so both wrapper
+        # transports in this codebase expose their inner transport the same,
+        # externally-visible way -- not for any caller outside this module to
+        # rely on directly.
+        self.wrapped_transport = wrapped_transport
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         http_request_counter.increment()
-        return await self._transport.handle_async_request(request)
+        return await self.wrapped_transport.handle_async_request(request)
 
     async def aclose(self) -> None:
-        await self._transport.aclose()
+        await self.wrapped_transport.aclose()
