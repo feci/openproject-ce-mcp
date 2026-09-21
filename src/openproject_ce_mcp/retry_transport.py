@@ -39,7 +39,14 @@ class RetryTransport(httpx.AsyncBaseTransport):
             base_delay: Base delay in seconds for exponential backoff
             max_delay: Maximum delay in seconds between retries
         """
-        self._transport = wrapped_transport
+        # Public, not `_transport` -- client.py needs to inject
+        # CountingTransport INSIDE an already-constructed, caller-supplied
+        # RetryTransport (so each individual retry attempt still counts as
+        # its own real request), which requires read/write access to this
+        # attribute from outside the class. See client.py's own comment at
+        # its construction-path branch for why wrapping a caller-supplied
+        # RetryTransport from the OUTSIDE instead would be wrong.
+        self.wrapped_transport = wrapped_transport
         self._max_retries = max_retries
         self._base_delay = base_delay
         self._max_delay = max_delay
@@ -60,13 +67,13 @@ class RetryTransport(httpx.AsyncBaseTransport):
         # Only retry idempotent methods. PATCH is NOT retried because OpenProject
         # has at least one PATCH endpoint (emoji reactions) that is a toggle.
         if request.method not in {"GET", "HEAD", "OPTIONS", "PUT"}:
-            return await self._transport.handle_async_request(request)
+            return await self.wrapped_transport.handle_async_request(request)
 
         attempt = 0
 
         while attempt <= self._max_retries:
             try:
-                response = await self._transport.handle_async_request(request)
+                response = await self.wrapped_transport.handle_async_request(request)
 
                 if not self._is_retryable_status(response.status_code):
                     return response
@@ -177,4 +184,4 @@ class RetryTransport(httpx.AsyncBaseTransport):
 
     async def aclose(self) -> None:
         """Close the underlying transport."""
-        await self._transport.aclose()
+        await self.wrapped_transport.aclose()

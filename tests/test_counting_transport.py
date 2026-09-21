@@ -130,3 +130,37 @@ async def test_client_counts_a_real_request_with_retries_enabled() -> None:
         await client.aclose()
 
     assert http_request_counter.current() == 1
+
+
+@pytest.mark.asyncio
+async def test_client_does_not_double_wrap_a_caller_supplied_retry_transport() -> None:
+    """Regression (Codex review round 9): a caller-supplied RetryTransport
+    (a documented, supported construction path) used to be hidden inside an
+    outer CountingTransport before the RetryTransport double-wrap check ran,
+    so that check's isinstance(transport, RetryTransport) failed and a
+    SECOND RetryTransport was installed on top -- multiplying real network
+    attempts by (max_retries + 1) twice over, while the counter only
+    recorded the outer layer's attempts, undercounting the real total.
+    CountingTransport must instead be injected INSIDE the caller's own
+    RetryTransport (via its public wrapped_transport attribute), so retries
+    aren't duplicated and every real wire attempt is still counted."""
+    call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        return httpx.Response(503)
+
+    caller_retry_transport = RetryTransport(httpx.MockTransport(handler), max_retries=2, base_delay=0.01)
+    client = OpenProjectClient(_settings(max_retries=2), transport=caller_retry_transport)
+    http_request_counter.reset()
+    try:
+        with pytest.raises(Exception):  # noqa: B017, PT011 -- OpenProjectServerError after exhausting retries
+            await client.current_user.get_current_user()
+    finally:
+        await client.aclose()
+
+    # max_retries=2 -> 1 initial attempt + 2 retries = 3 real network calls,
+    # not 9 (which a (2+1) x (2+1) double-wrap would produce).
+    assert call_count == 3
+    assert http_request_counter.current() == 3
