@@ -101,13 +101,29 @@ jobs:
           cd ..
 
       - name: Create GitHub Release with wheel, sdist, and checksums
+        # Idempotent re-run: `gh release create <tag> <files>...` makes
+        # several separate API calls under the hood (create the release as
+        # a draft, upload each asset, then publish) -- if an asset upload
+        # fails partway through, an incomplete release is left behind, and
+        # a re-run's plain `gh release create` fails outright with "release
+        # already exists" before it can ever finish uploading the missing
+        # assets, even though the now-idempotent `uv publish` step above
+        # would otherwise let the whole job be safely retried. Split into
+        # "create the release if it doesn't already exist" (no assets yet)
+        # followed by "upload/replace all three assets" (`--clobber`,
+        # unconditionally, so this is correct whether the release is
+        # brand new or a retry of an incomplete one) instead of one
+        # combined call.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --verify-tag \
-            --title "$GITHUB_REF_NAME" \
-            --notes-file release-notes.md \
+          if ! gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" \
+              --verify-tag \
+              --title "$GITHUB_REF_NAME" \
+              --notes-file release-notes.md
+          fi
+          gh release upload "$GITHUB_REF_NAME" --clobber \
             dist/*.whl dist/*.tar.gz dist/SHA256SUMS
 
   # Split into two jobs, deliberately -- NOT for readability, but because
