@@ -81,7 +81,16 @@ jobs:
           fi
 
       - name: Publish to PyPI
-        run: uv publish
+        # --check-url makes this step idempotent: if a prior run of this job
+        # already uploaded this version's files (e.g. a later step like `gh
+        # release create` below failed transiently and the whole job got
+        # re-run), uv skips re-uploading files already present on the index
+        # instead of failing outright -- PyPI rejects re-uploading a
+        # version's files unconditionally, so without this a transient
+        # post-publish failure would permanently strand the job: every
+        # re-run fails here before ever reaching the steps that actually
+        # need to be retried.
+        run: uv publish --check-url https://pypi.org/simple/
 
       - name: Generate SHA-256 checksums
         # Generated after attestation, so the attested dist/* subject set
@@ -222,10 +231,43 @@ jobs:
           GH_TOKEN: ${{ secrets.TAP_REPO_PAT }}
         run: |
           version="${GITHUB_REF_NAME#v}"
+          branch="bump-${version}"
           gh auth setup-git
-          git checkout -b "bump-${version}"
-          git -c user.name="openproject-ce-mcp release bot" -c user.email="noreply@github.com" \
-            commit -am "openproject-ce-mcp ${version}"
-          git push origin "bump-${version}"
-          gh pr create --title "openproject-ce-mcp ${version}" \
-            --body "Automated bump after the openproject-ce-mcp ${version} PyPI release."
+
+          # Idempotent re-run: if a prior run of this job already pushed
+          # this branch but then failed transiently before (or during)
+          # `gh pr create` below, a plain `git checkout -b`/`git push`
+          # here would either fail outright (branch already exists
+          # locally -- moot, this is always a fresh checkout) or push a
+          # NEW commit that the existing remote branch can't fast-forward
+          # to, since it isn't a descendant of whatever commit the prior
+          # run already pushed. If the remote branch already exists,
+          # reuse it as-is (it already has the correct Formula content
+          # from that prior run) instead of creating another commit on it.
+          if git ls-remote --exit-code --heads origin "$branch" > /dev/null 2>&1; then
+            echo "Branch $branch already exists on the tap -- reusing it (a prior run already pushed it)."
+          else
+            git checkout -b "$branch"
+            git -c user.name="openproject-ce-mcp release bot" -c user.email="noreply@github.com" \
+              commit -am "openproject-ce-mcp ${version}"
+            git push origin "$branch"
+          fi
+
+          # gh pr create exits non-zero with an "already exists" message if
+          # a prior run of this job already opened this exact PR (branch
+          # already pushed, PR creation is the step that failed
+          # transiently) -- that specific case is a successful re-run, not
+          # a job failure, so it's matched and swallowed explicitly; any
+          # OTHER gh pr create failure still fails the job normally.
+          if ! output="$(gh pr create --title "openproject-ce-mcp ${version}" \
+            --body "Automated bump after the openproject-ce-mcp ${version} PyPI release." 2>&1)"; then
+            if echo "$output" | grep -qi "already exists"; then
+              echo "PR for $branch already exists (a prior run already opened it) -- treating as success."
+              echo "$output"
+            else
+              echo "$output" >&2
+              exit 1
+            fi
+          else
+            echo "$output"
+          fi
