@@ -498,15 +498,12 @@ async def create_meeting_outcome(
     safe_kind = _validate_choice(kind, field_name="kind", allowed_values=_MEETING_OUTCOME_KINDS)
     safe_notes = _validate_optional_text(notes, field_name="notes", max_length=50_000)
     safe_work_package_id = _validate_optional_work_package_ref(work_package_id)
-    safe_work_package_numeric_id = (
-        int(safe_work_package_id) if safe_work_package_id is not None and safe_work_package_id.isdigit() else None
-    )
     return await _run_tool(
         client.meeting_outcome.create(
             agenda_item_id=safe_agenda_item_id,
             kind=safe_kind,
             notes=safe_notes,
-            work_package_id=safe_work_package_numeric_id,
+            work_package_id=safe_work_package_id,
             confirm=confirm,
         )
     )
@@ -536,18 +533,15 @@ async def update_meeting_outcome(
     safe_kind = _validate_optional_choice(kind, field_name="kind", allowed_values=_MEETING_OUTCOME_KINDS)
     safe_notes = _validate_optional_update_text(notes, field_name="notes", max_length=50_000)
     safe_work_package_id = _validate_optional_work_package_ref(work_package_id)
-    safe_work_package_numeric_id = (
-        int(safe_work_package_id) if safe_work_package_id is not None and safe_work_package_id.isdigit() else None
-    )
     _require_at_least_one(
-        safe_kind, safe_notes, safe_work_package_numeric_id, message="At least one field to update is required."
+        safe_kind, safe_notes, safe_work_package_id, message="At least one field to update is required."
     )
     return await _run_tool(
         client.meeting_outcome.update(
             outcome_id=safe_id,
             kind=safe_kind,
             notes=safe_notes,
-            work_package_id=safe_work_package_numeric_id,
+            work_package_id=safe_work_package_id,
             confirm=confirm,
         )
     )

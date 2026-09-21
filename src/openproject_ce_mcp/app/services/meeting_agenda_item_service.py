@@ -213,7 +213,14 @@ class MeetingAgendaItemService:
         await self._ensure_meeting_allowed(meeting_id, write=True)
         resolved_work_package_id: int | None = None
         if work_package_id is not None:
-            resolved_work_package_id = await self._resolve_work_package_id(work_package_id, write=False)
+            # write=True: linking a work package into this agenda item is a
+            # write TARGET reference (setting the link), not a read of the
+            # work package -- same shape as wiki_page_link_service.create's
+            # own work_package_id resolution. A caller with write access to
+            # the meeting but only READ access to the work package's project
+            # must not be able to link that work package into a meeting they
+            # can write to.
+            resolved_work_package_id = await self._resolve_work_package_id(work_package_id, write=True)
         payload = await self._build_write_payload(
             meeting_id=meeting_id,
             title=title,
@@ -268,7 +275,9 @@ class MeetingAgendaItemService:
         await self._ensure_meeting_allowed(meeting_id, write=True)
         resolved_work_package_id: int | None = None
         if work_package_id is not None:
-            resolved_work_package_id = await self._resolve_work_package_id(work_package_id, write=False)
+            # write=True: same reasoning as create() above -- setting this
+            # link is a write TARGET reference, not a read.
+            resolved_work_package_id = await self._resolve_work_package_id(work_package_id, write=True)
         payload = await self._build_write_payload(
             meeting_id=None,
             title=title,

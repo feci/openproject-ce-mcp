@@ -34,6 +34,7 @@ from ..policies import scope as scope_policy
 from ..ports.meeting_agenda_item_api import MeetingAgendaItemApi
 from ..ports.meeting_api import MeetingApi
 from ..ports.meeting_outcome_api import MeetingOutcomeApi
+from ..ports.work_package_ref import WorkPackageIdResolver
 from ..version_gate import call_version_gated
 from ._write_outcome import _finalize_write, _WriteOutcome
 
@@ -47,6 +48,7 @@ class MeetingOutcomeService:
         meeting_api: MeetingApi,
         settings: Settings,
         project_id_to_identifier: dict[int, str],
+        resolve_work_package_id: WorkPackageIdResolver,
         api_prefix: str,
     ) -> None:
         self._api = api
@@ -54,6 +56,7 @@ class MeetingOutcomeService:
         self._meeting_api = meeting_api
         self._settings = settings
         self._project_id_to_identifier = project_id_to_identifier
+        self._resolve_work_package_id = resolve_work_package_id
         self._api_prefix = api_prefix
 
     def _stamp(self, summary: MeetingOutcomeSummary) -> MeetingOutcomeSummary:
@@ -170,12 +173,23 @@ class MeetingOutcomeService:
         agenda_item_id: int,
         kind: str,
         notes: str | None = None,
-        work_package_id: int | None = None,
+        work_package_id: int | str | None = None,
         confirm: bool = False,
     ) -> MeetingOutcomeWriteResult:
         await self._ensure_via_agenda_item(agenda_item_id, write=True)
+        resolved_work_package_id: int | None = None
+        if work_package_id is not None:
+            # write=True: linking a work package into this outcome is a
+            # write TARGET reference (setting the link), not a read -- same
+            # reasoning as MeetingAgendaItemService's own work_package_id
+            # resolution. Without this, a caller with write access to the
+            # meeting outcome (via its agenda item/meeting project) could
+            # link an arbitrary work package outside OPENPROJECT_WRITE_
+            # PROJECTS -- this resolver call was entirely missing before,
+            # not just using the wrong write= value.
+            resolved_work_package_id = await self._resolve_work_package_id(work_package_id, write=True)
         payload = await self._build_write_payload(
-            agenda_item_id=agenda_item_id, kind=kind, notes=notes, work_package_id=work_package_id
+            agenda_item_id=agenda_item_id, kind=kind, notes=notes, work_package_id=resolved_work_package_id
         )
 
         async def _commit(p: dict[str, Any]) -> MeetingOutcomeSummary:
@@ -205,14 +219,18 @@ class MeetingOutcomeService:
         outcome_id: int,
         kind: str | None = None,
         notes: str | None = None,
-        work_package_id: int | None = None,
+        work_package_id: int | str | None = None,
         confirm: bool = False,
     ) -> MeetingOutcomeWriteResult:
         current = await call_version_gated(lambda: self._api.get(outcome_id), feature="Meeting outcomes", floor="17.6")
         agenda_item_id = current.summary.meeting_agenda_item_id
         await self._ensure_outcome_allowed(outcome_id, agenda_item_id, write=True)
+        resolved_work_package_id: int | None = None
+        if work_package_id is not None:
+            # write=True: same reasoning as create() above.
+            resolved_work_package_id = await self._resolve_work_package_id(work_package_id, write=True)
         payload = await self._build_write_payload(
-            agenda_item_id=None, kind=kind, notes=notes, work_package_id=work_package_id
+            agenda_item_id=None, kind=kind, notes=notes, work_package_id=resolved_work_package_id
         )
 
         async def _commit(p: dict[str, Any]) -> MeetingOutcomeSummary:
