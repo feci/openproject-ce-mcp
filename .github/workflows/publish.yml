@@ -217,6 +217,12 @@ jobs:
           name: homebrew-formula
           path: Formula/openproject-ce-mcp.rb
           retention-days: 1
+          # An artifact name is immutable within one workflow run -- a
+          # "Re-run all jobs" after the downstream push-homebrew-formula job
+          # failed would otherwise re-run this job too and fail this upload
+          # outright with "already exists", same reasoning as test.yml's
+          # dist/sbom uploads.
+          overwrite: true
 
   push-homebrew-formula:
     needs: [publish, prepare-homebrew-formula]

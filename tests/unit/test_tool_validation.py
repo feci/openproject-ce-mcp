@@ -646,13 +646,39 @@ async def test_categorize_tool_errors_tags_validation_and_avoids_double_prefix()
     with pytest.raises(ValueError, match=r"^\[VALIDATION_FAILED\] subject is required$"):
         await raw_validation(None)
 
-    # An already-categorized message must not be prefixed twice.
+    # A message already prefixed with THIS SAME category must not be
+    # prefixed twice.
     @_categorize_tool_errors
     async def already_tagged(_ctx):
-        raise ValueError("[RESOURCE_NOT_FOUND] gone")
+        raise ValueError("[VALIDATION_FAILED] subject already validated upstream")
 
-    with pytest.raises(ValueError, match=r"^\[RESOURCE_NOT_FOUND\] gone$"):
+    with pytest.raises(ValueError, match=r"^\[VALIDATION_FAILED\] subject already validated upstream$"):
         await already_tagged(None)
+
+
+@pytest.mark.asyncio
+async def test_categorize_tool_errors_does_not_treat_a_foreign_bracket_tag_as_already_categorized() -> None:
+    """Regression (Codex review round 14): a tool-body validator's raw
+    ValueError message can echo back caller-supplied text (a custom field
+    key, a filter value). A prior, looser implementation of _prefix treated
+    ANY leading `[UPPERCASE_WORD] ` bracket token as "already categorized"
+    and skipped prefixing -- if that echoed-back text happened to look like
+    a different category tag (e.g. "[RESOURCE_NOT_FOUND] ..."), the real
+    VALIDATION_FAILED category was silently dropped from the message the
+    agent actually sees, even though the separate structured log still
+    correctly recorded VALIDATION_FAILED -- an inconsistency, and a
+    misleading category, an agent could be steered into by crafting input
+    that happens to look like a different error tag."""
+    from openproject_ce_mcp.tools_runtime import _categorize_tool_errors
+
+    @_categorize_tool_errors
+    async def raw_validation_with_foreign_looking_tag(_ctx):
+        raise ValueError("[RESOURCE_NOT_FOUND] the field you gave does not exist")
+
+    with pytest.raises(
+        ValueError, match=r"^\[VALIDATION_FAILED\] \[RESOURCE_NOT_FOUND\] the field you gave does not exist$"
+    ):
+        await raw_validation_with_foreign_looking_tag(None)
 
 
 @pytest.mark.asyncio

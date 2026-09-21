@@ -24,7 +24,6 @@ import functools
 import inspect
 import json
 import logging
-import re
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import fields as dataclass_fields
@@ -170,12 +169,25 @@ def _client_from_context(ctx: Context) -> OpenProjectClient:
 # `code`/`layer` ClassVars) -- this module only formats/dispatches, it is not
 # the source of truth for the mapping (see app/errors.py's module docstring
 # for why that's the cleaner home for it than a lookup table here).
-_CATEGORY_PREFIX_RE = re.compile(r"^\[[A-Z_]+\]\s")
-
-
 def _prefix(category: str, message: str) -> str:
-    if _CATEGORY_PREFIX_RE.match(message):
-        return message  # already categorized; don't double-prefix
+    """Prepend `[category] ` unless `message` is already prefixed with
+    EXACTLY that category -- avoiding a double `[VALIDATION_FAILED]
+    [VALIDATION_FAILED] ...` when a message built elsewhere (e.g.
+    strict_mcpserver.py's own `[VALIDATION_FAILED]`-prefixed argument
+    errors) already carries the same tag before reaching here.
+
+    Deliberately does NOT match ANY `[UPPERCASE] ` bracket token, only this
+    call's own `category` -- a tool-body validator's message can echo back
+    caller-supplied text (a custom field key, a filter value), and a prior,
+    looser regex here would have treated any such text that happened to
+    look like `[SOME_TOKEN] ...` as "already categorized," silently
+    replacing the real, correct category with a caller-influenced,
+    misleading one in the message the agent actually sees (while the
+    separate structured log still recorded the correct category, making the
+    two inconsistent).
+    """
+    if message.startswith(f"[{category}] "):
+        return message
     return f"[{category}] {message}"
 
 

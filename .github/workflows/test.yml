@@ -173,6 +173,13 @@ jobs:
         with:
           name: sbom
           path: sbom.json
+          # An artifact name is immutable within one workflow run -- a
+          # re-run of this job (e.g. "Re-run failed jobs" after the LATER
+          # dist upload below failed transiently) would otherwise fail this
+          # already-succeeded upload outright with "already exists",
+          # permanently stranding the job before it ever reaches the step
+          # that actually needs retrying.
+          overwrite: true
 
       - name: Upload built dist for install-smoke/upgrade jobs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -180,6 +187,7 @@ jobs:
           name: dist
           path: dist/*
           retention-days: 1
+          overwrite: true # see the sbom upload's own comment above
 
   install-smoke:
     needs: build
