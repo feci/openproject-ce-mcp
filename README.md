@@ -164,15 +164,9 @@ See [SECURITY.md](https://github.com/jtauschl/openproject-ce-mcp/blob/main/SECUR
 
 ## Development
 
-```bash
-git clone -b release/0.5.0 https://github.com/jtauschl/openproject-ce-mcp.git
-cd openproject-ce-mcp
-uv sync --dev
-uv run pytest
-```
-
 `main` is a frozen snapshot of the last release, not the active development
-branch. See [Development](CONTRIBUTING.md) for the full test suite (unit,
+branch. See [CONTRIBUTING.md](CONTRIBUTING.md) for which branch to clone
+(active development vs. bugfixes) and the full test suite (unit,
 integration, and Docker test instances).
 
 ---
