@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 15
     environment: pypi
     permissions:
-      contents: read        # actions/checkout (explicit once any permission is set)
+      contents: write       # actions/checkout, plus gh release create/upload (GITHUB_TOKEN)
       id-token: write       # required for PyPI trusted publishing (OIDC) and attestation signing
       attestations: write   # required to publish a build-provenance attestation
 
@@ -45,6 +45,15 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Verify tag matches pyproject.toml version
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          pkg_version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::Tag v$tag_version does not match pyproject.toml version $pkg_version" >&2
+            exit 1
+          fi
+
       - name: Build sdist and wheel
         run: uv build
 
@@ -55,5 +64,64 @@ jobs:
         with:
           subject-path: "dist/*"
 
+      # Validated BEFORE the PyPI publish step, deliberately -- uv publish
+      # makes this release immutably public and a failed re-run afterward
+      # can never recover (PyPI rejects re-uploading the same version's
+      # files), so any gate that can still be fixed by editing CHANGELOG.md
+      # and re-tagging must run first, while that's still an option.
+      - name: Extract this version's CHANGELOG section for release notes
+        run: |
+          awk -v ver="${GITHUB_REF_NAME#v}" '
+            /^## \[/ { if (found) exit; if ($0 ~ "^## \\[" ver "\\]") { found=1; next } }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error::No CHANGELOG.md section found for version ${GITHUB_REF_NAME#v} — add one before tagging" >&2
+            exit 1
+          fi
+
       - name: Publish to PyPI
-        run: uv publish
+        # --check-url makes this step idempotent: if a prior run of this job
+        # already uploaded this version's files (e.g. a later step like `gh
+        # release create` below failed transiently and the whole job got
+        # re-run), uv skips re-uploading files already present on the index
+        # instead of failing outright -- PyPI rejects re-uploading a
+        # version's files unconditionally, so without this a transient
+        # post-publish failure would permanently strand the job: every
+        # re-run fails here before ever reaching the steps that actually
+        # need to be retried.
+        run: uv publish --check-url https://pypi.org/simple/
+
+      - name: Generate SHA-256 checksums
+        # Generated after attestation, so the attested dist/* subject set
+        # (wheel + sdist only) never includes this derived file.
+        run: |
+          cd dist
+          sha256sum -- * > SHA256SUMS
+          cd ..
+
+      - name: Create GitHub Release with wheel, sdist, and checksums
+        # Idempotent re-run: `gh release create <tag> <files>...` makes
+        # several separate API calls under the hood (create the release as
+        # a draft, upload each asset, then publish) -- if an asset upload
+        # fails partway through, an incomplete release is left behind, and
+        # a re-run's plain `gh release create` fails outright with "release
+        # already exists" before it can ever finish uploading the missing
+        # assets, even though the now-idempotent `uv publish` step above
+        # would otherwise let the whole job be safely retried. Split into
+        # "create the release if it doesn't already exist" (no assets yet)
+        # followed by "upload/replace all three assets" (`--clobber`,
+        # unconditionally, so this is correct whether the release is
+        # brand new or a retry of an incomplete one) instead of one
+        # combined call.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" \
+              --verify-tag \
+              --title "$GITHUB_REF_NAME" \
+              --notes-file release-notes.md
+          fi
+          gh release upload "$GITHUB_REF_NAME" --clobber \
+            dist/*.whl dist/*.tar.gz dist/SHA256SUMS
