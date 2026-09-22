@@ -18,6 +18,12 @@ landing on the current `release/0.4.x` branch is forward-merged into
 `release/0.5.0` (never cherry-picked, unless explicitly justified) so the
 next release always carries every prior bugfix.
 
+**`release/0.4.1` is tagged and released as of `v0.4.1`.** Any new bugfix
+for the 0.4.x line goes on a fresh `release/0.4.2` branch cut from the
+`v0.4.1` tag, not onto `release/0.4.1` itself — once a release branch is
+tagged, treat it as closed for further commits. New feature work still
+goes on `release/0.5.0`.
+
 ## Set up
 
 ```bash

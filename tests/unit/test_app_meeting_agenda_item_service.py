@@ -294,13 +294,13 @@ async def test_create_commit_with_confirm_calls_api_create() -> None:
 
 @pytest.mark.asyncio
 async def test_create_resolves_linked_work_package_id_with_write_scope() -> None:
-    """Regression (Codex review round 16): create() previously resolved a
-    supplied work_package_id with write=False (a READ-scope check), even
-    though linking a work package into an agenda item is a WRITE target
-    reference -- a caller with write access to the meeting but only READ
-    access to the work package's own project could link that work package
-    into a meeting they can write to. Must use write=True, same as
-    wiki_page_link_service.create's own work_package_id resolution."""
+    """Regression: create() previously resolved a supplied work_package_id
+    with write=False (a READ-scope check), even though linking a work
+    package into an agenda item is a WRITE target reference -- a caller
+    with write access to the meeting but only READ access to the work
+    package's own project could link that work package into a meeting they
+    can write to. Must use write=True, same as wiki_page_link_service.
+    create's own work_package_id resolution."""
     api = _FakeMeetingAgendaItemApi()
     resolved: list[tuple] = []
 
@@ -355,8 +355,7 @@ async def test_update_preview_without_confirm_does_not_call_api_update() -> None
 
 @pytest.mark.asyncio
 async def test_update_resolves_linked_work_package_id_with_write_scope() -> None:
-    """Regression (Codex review round 16): same as create()'s own version of
-    this test above."""
+    """Regression: same as create()'s own version of this test above."""
     api = _FakeMeetingAgendaItemApi([MeetingAgendaItemRecord(summary=_agenda_summary(meeting_id=12))])
     resolved: list[tuple] = []
 

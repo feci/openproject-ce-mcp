@@ -258,13 +258,12 @@ async def test_create_commit_with_confirm_calls_api_create() -> None:
 
 @pytest.mark.asyncio
 async def test_create_resolves_linked_work_package_id_with_write_scope() -> None:
-    """Regression (Codex review round 16): create() previously passed a
-    raw, caller-supplied work_package_id straight into the payload with NO
-    resolver call at all -- a writable meeting outcome could be linked to
-    an arbitrary work package entirely outside OPENPROJECT_WRITE_PROJECTS,
-    with no scope check whatsoever (not even a wrong-scope one). Must
-    resolve via resolve_work_package_id(..., write=True), same as
-    MeetingAgendaItemService's own equivalent link."""
+    """Regression: create() previously passed a raw, caller-supplied
+    work_package_id straight into the payload with NO resolver call at all
+    -- a writable meeting outcome could be linked to an arbitrary work
+    package entirely outside OPENPROJECT_WRITE_PROJECTS, with no scope
+    check whatsoever. Must resolve via resolve_work_package_id(...,
+    write=True), same as MeetingAgendaItemService's own equivalent link."""
     api = _FakeMeetingOutcomeApi()
     resolved: list[tuple] = []
 
@@ -314,8 +313,7 @@ async def test_update_preview_without_confirm_does_not_call_api_update() -> None
 
 @pytest.mark.asyncio
 async def test_update_resolves_linked_work_package_id_with_write_scope() -> None:
-    """Regression (Codex review round 16): same as create()'s own version of
-    this test above."""
+    """Regression: same as create()'s own version of this test above."""
     api = _FakeMeetingOutcomeApi()
     resolved: list[tuple] = []
 

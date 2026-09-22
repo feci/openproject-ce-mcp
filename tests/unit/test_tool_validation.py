@@ -658,12 +658,12 @@ async def test_categorize_tool_errors_tags_validation_and_avoids_double_prefix()
 
 @pytest.mark.asyncio
 async def test_categorize_tool_errors_does_not_treat_a_foreign_bracket_tag_as_already_categorized() -> None:
-    """Regression (Codex review round 14): a tool-body validator's raw
-    ValueError message can echo back caller-supplied text (a custom field
-    key, a filter value). A prior, looser implementation of _prefix treated
-    ANY leading `[UPPERCASE_WORD] ` bracket token as "already categorized"
-    and skipped prefixing -- if that echoed-back text happened to look like
-    a different category tag (e.g. "[RESOURCE_NOT_FOUND] ..."), the real
+    """Regression: a tool-body validator's raw ValueError message can echo
+    back caller-supplied text (a custom field key, a filter value). A prior,
+    looser implementation of _prefix treated ANY leading
+    `[UPPERCASE_WORD] ` bracket token as "already categorized" and skipped
+    prefixing -- if that echoed-back text happened to look like a different
+    category tag (e.g. "[RESOURCE_NOT_FOUND] ..."), the real
     VALIDATION_FAILED category was silently dropped from the message the
     agent actually sees, even though the separate structured log still
     correctly recorded VALIDATION_FAILED -- an inconsistency, and a

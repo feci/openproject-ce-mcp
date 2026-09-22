@@ -122,6 +122,19 @@ development baseline.
   was never bumped once the 0.4.x line reaches a second patch digit (e.g.
   `0.4.10` contains `0.4.1` as a substring) -- now an exact-token comparison.
 
+## [0.4.1] - 2026-09-22
+
+### Security
+
+- Meeting agenda items and meeting outcomes now enforce the write project
+  allowlist on a linked work package, closing a gap where linking could
+  bypass `OPENPROJECT_WRITE_PROJECTS`.
+- Sanitized tool error messages no longer allow a caller-influenced value to
+  suppress the intended error category.
+- Bumped `anyio`, `click`, and `httpx2` to fix known CVEs in transitive
+  dependencies (found via `pip-audit`; not reachable through this project's
+  own code paths, upgraded as a precaution).
+
 ## [0.4.0] - 2026-09-12
 
 Complete the layered `app/` architecture migration so the codebase can scale
