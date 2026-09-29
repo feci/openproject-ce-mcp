@@ -6,29 +6,22 @@
 
 ## Where to send a pull request
 
-`main` is not the active development branch — it stays frozen at the last
-finalized release. Active work happens on two parallel release branches:
-the current `release/0.4.x` bugfix branch (fixes for the released version;
-check the repo's branch list for the exact version) and `release/0.5.0`
-(new development for the next release). Clone and base your PR on
-whichever of these matches the code you're touching, not `main` — a
-checkout of `main` (or a PR against it) leaves you on a frozen snapshot
-and needing manual re-application onto the correct release branch. A fix
-landing on the current `release/0.4.x` branch is forward-merged into
-`release/0.5.0` (never cherry-picked, unless explicitly justified) so the
-next release always carries every prior bugfix.
+`main` is frozen at the last release. Base your PR on the branch that
+matches your change:
 
-**`release/0.4.1` is tagged and released as of `v0.4.1`.** Any new bugfix
-for the 0.4.x line goes on a fresh `release/0.4.2` branch cut from the
-`v0.4.1` tag, not onto `release/0.4.1` itself — once a release branch is
-tagged, treat it as closed for further commits. New feature work still
-goes on `release/0.5.0`.
+- `release/0.4.2`: bugfixes for the released version.
+- `release/0.5.0`: new development for the next release.
+
+A PR against `main` lands on a frozen snapshot and has to be re-applied onto
+the right release branch. Fixes on `release/0.4.2` are forward-merged into
+`release/0.5.0` (never cherry-picked, unless explicitly justified), so the
+next release always carries every prior bugfix.
 
 ## Set up
 
 ```bash
 # bugfix on the released version (layered `app/` architecture):
-git clone -b release/0.4.1 https://github.com/jtauschl/openproject-ce-mcp.git
+git clone -b release/0.4.2 https://github.com/jtauschl/openproject-ce-mcp.git
 
 # new development for the next release (layered `app/` architecture):
 git clone -b release/0.5.0 https://github.com/jtauschl/openproject-ce-mcp.git
@@ -66,7 +59,7 @@ uv run pytest -m integration -v
 
 `OPENPROJECT_TEST_PROJECT` is the project identifier used for write tests (default: `mcp-test`). Integration tests are excluded from the default run (`-m 'not integration'`) and must be opted in explicitly.
 
-For local, throwaway instances across every supported OpenProject minor (16.0 through the latest — see [`docker/test/README.md`](docker/test/README.md) for exactly which versions and why each one matters), see [`docker/test/`](https://github.com/jtauschl/openproject-ce-mcp/tree/main/docker/test) — `docker/test/up.sh` boots and seeds them and prints the env block to run the integration tests against each. To verify the client's API assumptions against the OpenProject source across releases, see [`tools/api-check/`](https://github.com/jtauschl/openproject-ce-mcp/tree/main/tools/api-check).
+For local, throwaway instances across every supported OpenProject minor (16.0 through the latest — see [`docker/test/README.md`](docker/test/README.md) for exactly which versions and why each one matters), see [`docker/test/`](docker/test/) — `docker/test/up.sh` boots and seeds them and prints the env block to run the integration tests against each. To verify the client's API assumptions against the OpenProject source across releases, see [`tools/api-check/`](tools/api-check/).
 
 ## After code changes
 
