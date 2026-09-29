@@ -6,31 +6,22 @@
 
 ## Where to send a pull request
 
-`main` is not the active development branch — it stays frozen at the last
-finalized release. Active work happens on two parallel release branches:
-the current `release/0.4.x` bugfix branch (fixes for the released version;
-check the repo's branch list for the exact version) and `release/0.5.0`
-(new development for the next release). Clone and base your PR on
-whichever of these matches the code you're touching, not `main` — a
-checkout of `main` (or a PR against it) leaves you on a frozen snapshot
-and needing manual re-application onto the correct release branch. A fix
-landing on the current `release/0.4.x` branch is forward-merged into
-`release/0.5.0` (never cherry-picked, unless explicitly justified) so the
-next release always carries every prior bugfix.
+`main` is frozen at the last release. Base your PR on the branch that
+matches your change:
 
-**`release/0.4.1` is tagged and released as of `v0.4.1`.** Any new bugfix
-for the 0.4.x line goes on a fresh `release/0.4.2` branch cut from the
-`v0.4.1` tag, not onto `release/0.4.1` itself — once a release branch is
-tagged, treat it as closed for further commits. New feature work still
-goes on `release/0.5.0`.
+- `release/0.4.2`: bugfixes for the released version.
+- `release/0.5.0`: new development for the next release.
+
+Fixes on `release/0.4.2` are carried into `release/0.5.0` by the maintainer,
+so a fix needs only one PR.
 
 ## Set up
 
 ```bash
-# bugfix on the released version (layered `app/` architecture):
-git clone -b release/0.4.1 https://github.com/jtauschl/openproject-ce-mcp.git
+# bugfix on the released version:
+git clone -b release/0.4.2 https://github.com/jtauschl/openproject-ce-mcp.git
 
-# new development for the next release (layered `app/` architecture):
+# new development for the next release:
 git clone -b release/0.5.0 https://github.com/jtauschl/openproject-ce-mcp.git
 
 cd openproject-ce-mcp
@@ -45,6 +36,10 @@ python3 -m venv .venv
 
 ## Run tests
 
+Before pushing, run the full gate: `./dev ci` (lint, types, tests with the
+coverage gate, build). Besides `uv`, it needs `shellcheck`, `shfmt` 3.14.1
+and `actionlint` on your `PATH`. `./dev test` runs the unit tests alone.
+
 **Unit tests** (no network — run against `httpx` mocks):
 
 ```bash
@@ -55,7 +50,7 @@ uv run pytest
 .venv/bin/python -m pytest
 ```
 
-**Integration tests** (require a live OpenProject instance):
+**Integration tests** (require a disposable, non-production OpenProject instance; they create, update and delete data):
 
 ```bash
 OPENPROJECT_BASE_URL=https://op.example.com \
@@ -66,40 +61,35 @@ uv run pytest -m integration -v
 
 `OPENPROJECT_TEST_PROJECT` is the project identifier used for write tests (default: `mcp-test`). Integration tests are excluded from the default run (`-m 'not integration'`) and must be opted in explicitly.
 
-For local, throwaway instances across every supported OpenProject minor (16.0 through the latest — see [`docker/test/README.md`](docker/test/README.md) for exactly which versions and why each one matters), see [`docker/test/`](https://github.com/jtauschl/openproject-ce-mcp/tree/main/docker/test) — `docker/test/up.sh` boots and seeds them and prints the env block to run the integration tests against each. To verify the client's API assumptions against the OpenProject source across releases, see [`tools/api-check/`](https://github.com/jtauschl/openproject-ce-mcp/tree/main/tools/api-check).
+For local, throwaway instances across every supported OpenProject minor (16.0 through the latest — see [`docker/test/README.md`](docker/test/README.md) for exactly which versions and why each one matters), see [`docker/test/`](docker/test/) — `docker/test/up.sh` boots and seeds them and prints the env block to run the integration tests against each. To verify the client's API assumptions against the OpenProject source across releases, see [`tools/api-check/`](tools/api-check/).
 
 ## After code changes
 
 The MCP server runs as a subprocess. After any code change, restart your MCP client before updated tools become active.
 
-## Releasing
+## Conventions
 
-`pyproject.toml`'s `[project].version` is the single source of truth for the
-package version — nothing else needs to be edited by hand. `__init__.py`
-reads it back at runtime via `importlib.metadata`, so the two can no longer
-drift independently.
+### Design
 
-To cut a release:
+- **Every write is preview-then-confirm, with no way around it.** OpenProject's own permissions stay the final authority.
+- **Add a tool for a capability, not for an endpoint.** Follow the [Tool catalog conventions](docs/architecture.md#tool-catalog-conventions) for naming, `get_*` versus `list_*`, group placement, and descriptions.
+- **Keep the context cost low.** Every enabled tool's description adds to a fixed catalog cost in every session. Every field a response returns adds to the cost of each call.
+- **Check OpenProject behavior against its source**, not only against the published spec.
+- **Follow the existing pattern.** Don't add defensive code for cases that can't happen.
 
-1. Bump `version` in `pyproject.toml` (and nothing else).
-2. Update `CHANGELOG.md`'s `[Unreleased]` section into a new `[X.Y.Z] - date` entry.
-3. Commit, then tag the commit `vX.Y.Z` and push the tag.
+### Code and tests
 
-CI verifies version consistency before publishing:
-- `publish.yml` rejects a tag that isn't an exact `vMAJOR.MINOR.PATCH` (no
-  pre-release suffix) and rejects a tag that doesn't match `pyproject.toml`'s
-  declared version.
-- `test.yml`'s `build` job builds the package twice from the same commit and
-  verifies the wheel and sdist are byte-identical, and checks both with
-  `twine check`.
-- `tests/test_versioning.py` fails locally or in CI if `__version__` (derived
-  from installed package metadata) and `pyproject.toml`'s declared version
-  ever disagree — this only happens if your local venv is stale; re-run
-  `uv sync --dev`.
+- **Test the actual claim**, not just that the code path ran. A new client method needs both a unit test and an integration test.
+- **Tool docstrings are short and state the contract:** what the tool does, any non-obvious or consequential effects (such as notifications or irreversibility), and constraints the schema can't express. Don't repeat parameter types or the server instructions.
+- **Inline comments explain WHY, never WHAT.** Comment only what the code can't show: a hidden constraint, a workaround, an invariant. Don't include history, dates, or PR and ticket references.
+- **Don't silence lint or type findings locally.** The one exception is a genuine false positive: suppress it with the rule ID and a one-line reason.
 
-The package is published to [PyPI](https://pypi.org/project/openproject-ce-mcp/)
-via GitHub Actions using [trusted publishing](https://docs.pypi.org/trusted-publishers/)
-(OIDC — no API token stored), triggered by pushing the `vX.Y.Z` tag.
+### Commits, changelog, PRs
+
+- **Use an imperative commit subject under ~72 characters.** Put the WHY, spec deviations, and how you verified the change in the body.
+- **The CHANGELOG records the user-visible WHAT, never the WHY.** Keep entries as short as possible. Skip internal changes. Mark breaking changes with **Breaking:**.
+- **Keep one concern per PR.**
+- **Everything committed is in English.**
 
 ## See also
 

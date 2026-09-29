@@ -458,6 +458,96 @@ comes from the REST API, HAL links, query filters, or documented payload fields.
 This keeps the implementation source-conformant while still making internal
 resolution steps explicit.
 
+## Tool catalog conventions
+
+Every registered tool costs context in every session where its group is
+enabled, whether or not the agent ever calls it. A tool is added for a
+capability an agent needs, not because an endpoint exists. Endpoint coverage
+alone is not a reason to add a tool.
+
+### Naming scheme
+
+Tool names are `<verb>_<object>`, in snake_case.
+
+#### Verbs
+
+| Verb | Meaning |
+| --- | --- |
+| `list_` | A collection; filtered or paged where the API supports it |
+| `get_` | One object, by its id or another stable reference (identifier, display id). It also covers a singleton or a computed read (`get_instance_configuration`, `get_my_preferences`, `get_project_work_package_context`, `get_attachment_content`). The plural `get_<objects>` is reserved for a batch fetch by a list of ids (`get_work_packages`). |
+| `search_` | Free-text lookup |
+| `create_`, `update_`, `delete_` | Preview/confirm writes on one object |
+| `bulk_create_`, `bulk_update_` | The same writes, for several objects in one call |
+| `set_` | Sets a flag or state to a given value; idempotent (`set_project_favorite`, `set_work_package_watcher`) |
+| `toggle_` | Only where OpenProject itself toggles and the result depends on the current state (`toggle_activity_emoji_reaction`) |
+| A domain verb | Only when OpenProject names the action itself and it isn't a plain create, update or delete (`copy_project`, `execute_query`, `cancel_recurring_meeting_occurrence`, `init_recurring_meeting_occurrence`, `render_text`, `mark_notifications_read`) |
+
+Some existing names predate this scheme and are due to be renamed:
+`add_work_package_comment`, and `get_work_package_relations` and
+`get_work_package_activities`, which return collections.
+
+#### Objects
+
+- The object uses OpenProject's resource name (see [Naming
+  conventions](#naming-conventions)): singular for `get_`, `create_`, `update_`,
+  `delete_` and `set_`, plural for `list_`.
+- **Name the parent only when the call requires a parent reference.** When a
+  tool must be addressed through a parent, the name carries that parent.
+  Examples: `list_work_package_watchers`, `create_work_package_relation`,
+  `list_project_memberships`. When a tool is addressed by the object's own
+  reference alone, the name uses the bare object. Examples: `get_attachment`,
+  `update_relation`, `delete_reminder`.
+- Some OpenProject resource names already contain another resource's name, such
+  as `meeting_agenda_item`, `project_storage` and `time_entry_activity`. They
+  count as one object, not as parent plus child.
+- `my_` marks a tool scoped to the authenticated user with no user parameter
+  (`get_my_preferences`, `list_my_open_work_packages`).
+- A tool whose parent can be one of several resource types names the role
+  instead of a parent, for example `container`.
+
+### `list_*` and `get_*`
+
+A `list_*` tool does not automatically get a matching `get_*`. Add a `get_*`
+tool only when at least one of these holds:
+
+- **It returns more than the list row.** For example, full text where the list
+  truncates, embedded details, or fields the list omits (`get_work_package`
+  next to `list_work_packages`).
+- **Its reference reaches the agent from outside the list.** For example, the
+  user names it, or another tool returns it (`get_project`, `get_version`,
+  `get_github_pull_request`).
+
+A `get_*` that returns the same fields as a list row, for an id that only
+comes from that list, adds catalog cost without adding capability. Don't add
+one.
+
+### Descriptions
+
+A tool's description is its docstring, and it is sent in every session. Keep
+it short:
+
+- State what the tool does, any non-obvious or consequential effects (such as
+  notifications or irreversibility), and the constraints the schema can't
+  express.
+- Don't restate parameter types, and don't repeat the server instructions.
+  `test_ce_instructions_are_not_duplicated_into_any_tool_description` guards
+  against duplicating the CE server instructions.
+- Name a related tool only when the agent needs it to use this one correctly
+  (for example, where an id comes from).
+
+### Group placement
+
+- **Default groups** (`project`, `work_package`, `membership`, `version`,
+  `board`, `meeting`): tools an agent uses in ordinary project work.
+- **`extended`**: rarely needed read tools and metadata lookups. Moving a tool
+  here only changes whether it is visible. Keep its domain read scope in
+  `ADDITIONAL_READ_SCOPES_BY_TOOL`, and keep it in `_PROJECT_SCOPED_READ_TOOLS`
+  when it reads project data, so `OPENPROJECT_READ_PROJECTS` still governs
+  access.
+- **`personal`, `admin`, `user_schedule`**: keep them for their stated data
+  exposure profiles (see [configuration](configuration.md#tool-groups)). Don't
+  use them as a general opt-in bucket.
+
 ## Request flow
 
 Typical read flow:
