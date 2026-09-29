@@ -12,18 +12,16 @@ matches your change:
 - `release/0.4.2`: bugfixes for the released version.
 - `release/0.5.0`: new development for the next release.
 
-A PR against `main` lands on a frozen snapshot and has to be re-applied onto
-the right release branch. Fixes on `release/0.4.2` are forward-merged into
-`release/0.5.0` (never cherry-picked, unless explicitly justified), so the
-next release always carries every prior bugfix.
+Fixes on `release/0.4.2` are carried into `release/0.5.0` by the maintainer,
+so a fix needs only one PR.
 
 ## Set up
 
 ```bash
-# bugfix on the released version (layered `app/` architecture):
+# bugfix on the released version:
 git clone -b release/0.4.2 https://github.com/jtauschl/openproject-ce-mcp.git
 
-# new development for the next release (layered `app/` architecture):
+# new development for the next release:
 git clone -b release/0.5.0 https://github.com/jtauschl/openproject-ce-mcp.git
 
 cd openproject-ce-mcp
@@ -38,6 +36,10 @@ python3 -m venv .venv
 
 ## Run tests
 
+Before pushing, run the full gate: `./dev ci` (lint, types, tests with the
+coverage gate, build). Besides `uv`, it needs `shellcheck`, `shfmt` 3.14.1
+and `actionlint` on your `PATH`. `./dev test` runs the unit tests alone.
+
 **Unit tests** (no network — run against `httpx` mocks):
 
 ```bash
@@ -48,7 +50,7 @@ uv run pytest
 .venv/bin/python -m pytest
 ```
 
-**Integration tests** (require a live OpenProject instance):
+**Integration tests** (require a disposable, non-production OpenProject instance; they create, update and delete data):
 
 ```bash
 OPENPROJECT_BASE_URL=https://op.example.com \
@@ -65,13 +67,29 @@ For local, throwaway instances across every supported OpenProject minor (16.0 th
 
 The MCP server runs as a subprocess. After any code change, restart your MCP client before updated tools become active.
 
-## Releasing
+## Conventions
 
-The package is published to [PyPI](https://pypi.org/project/openproject-ce-mcp/)
-via GitHub Actions using [trusted publishing](https://docs.pypi.org/trusted-publishers/)
-(OIDC — no API token stored), triggered by pushing a `vX.Y.Z` tag. Every push
-and PR also runs the test matrix plus a `build` job (`uv build` +
-`uvx twine check dist/*`) so the package always stays buildable.
+### Design
+
+- **Every write is preview-then-confirm, with no way around it.** OpenProject's own permissions stay the final authority.
+- **Add a tool for a capability, not for an endpoint.** Follow the [Tool catalog conventions](docs/architecture.md#tool-catalog-conventions) for naming, `get_*` versus `list_*`, group placement, and descriptions.
+- **Keep the context cost low.** Every enabled tool's description adds to a fixed catalog cost in every session. Every field a response returns adds to the cost of each call.
+- **Check OpenProject behavior against its source**, not only against the published spec.
+- **Follow the existing pattern.** Don't add defensive code for cases that can't happen.
+
+### Code and tests
+
+- **Test the actual claim**, not just that the code path ran. A new client method needs both a unit test and an integration test.
+- **Tool docstrings are short and state the contract:** what the tool does, any non-obvious or consequential effects (such as notifications or irreversibility), and constraints the schema can't express. Don't repeat parameter types or the server instructions.
+- **Inline comments explain WHY, never WHAT.** Comment only what the code can't show: a hidden constraint, a workaround, an invariant. Don't include history, dates, or PR and ticket references.
+- **Don't silence lint or type findings locally.** The one exception is a genuine false positive: suppress it with the rule ID and a one-line reason.
+
+### Commits, changelog, PRs
+
+- **Use an imperative commit subject under ~72 characters.** Put the WHY, spec deviations, and how you verified the change in the body.
+- **The CHANGELOG records the user-visible WHAT, never the WHY.** Keep entries as short as possible. Skip internal changes. Mark breaking changes with **Breaking:**.
+- **Keep one concern per PR.**
+- **Everything committed is in English.**
 
 ## See also
 
