@@ -26,12 +26,10 @@ is gated on `embed_links`).
 
 `normalize_costs_by_type_raw`'s `total`/`count` in the raw payload are the
 NUMBER OF COST-TYPE GROUPS (`cost_helper.summarized_cost_entries.size`
-upstream), not a monetary total -- do not rename/reinterpret as a sum. Each
-element's `budgetId` field is a legacy Budgets-module naming artifact for the
-cost type's id (verified: `AggregatedCostEntryRepresenter#budget_id`'s getter
-returns `@cost_type.id`), unrelated to the Enterprise Budgets domain this MCP
-does not implement -- extracted here as `cost_type_id`, not exposed as
-`budget_id`, to avoid the misleading name leaking into the MCP's own surface.
+upstream), not a monetary total -- do not rename/reinterpret as a sum. The
+upstream `budgetId` field is misleading: `AggregatedCostEntryRepresenter#budget_id`
+returns `@cost_type.id`, so it does not identify a Budget. It is exposed as
+`cost_type_id` to keep that upstream misnomer out of this MCP's surface.
 `AggregatedCostEntryRepresenter` has no `id` property of its own
 (`model_required? => false`, no `self` link).
 """

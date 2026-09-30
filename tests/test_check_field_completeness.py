@@ -252,6 +252,11 @@ def test_every_exclusion_has_a_non_empty_reason():
         assert exclusion.reason.strip(), exclusion
 
 
+def test_work_package_budget_is_not_classified_as_enterprise():
+    (budget,) = [e for e in cfc.EXCLUSIONS if (e.resource, e.wire_name) == ("work_package", "budget")]
+    assert budget.category is cfc.ExclusionCategory.INTERNAL_OTHER
+
+
 # --- --write renderer -------------------------------------------------------
 
 

@@ -60,7 +60,6 @@ All write operations follow a preview-then-confirm pattern: call a tool once to 
 This MCP server targets **OpenProject Community Edition** only. It does not support Enterprise Edition features such as:
 
 - Placeholder Users
-- Budgets
 - Portfolios
 - Programs
 - Custom Actions

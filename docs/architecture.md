@@ -694,7 +694,6 @@ codebase:
 | Programs (`/api/v3/programs`) | Enterprise Edition only |
 | Portfolios (`/api/v3/portfolios`) | Enterprise Edition only |
 | Placeholder users (`/api/v3/placeholder_users`) | Enterprise Edition only |
-| Budgets (`/api/v3/budgets`) | Enterprise Edition only |
 | Custom actions (execute) | Enterprise Edition only |
 | Baseline comparisons | Enterprise Edition only |
 | OpenID Connect / SAML SSO management | Enterprise Edition only |
