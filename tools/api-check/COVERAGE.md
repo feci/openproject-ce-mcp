@@ -12,7 +12,7 @@ activities                 yes     —      covered
 attachments                yes     —      covered
 backlog_buckets            yes     —      covered
 backups                    —       —      enterprise
-budgets                    —       —      enterprise
+budgets                    —       —      GAP (CE)
 capabilities               yes     —      covered
 categories                 yes     —      covered
 configuration              yes     —      covered
@@ -84,10 +84,10 @@ wiki_pages                 yes     —      covered
 work_packages              yes     —      covered
 workspaces                 yes     —      covered
 
-Summary: covered=48, enterprise=7, internal=9, subresource=12
+Summary: GAP (CE)=1, covered=48, enterprise=6, internal=9, subresource=12
 (live probe skipped — set OPENPROJECT_BASE_URL / OPENPROJECT_API_TOKEN for CE availability)
 ```
 
 ## Genuine CE gaps
 
-_None — every plain top-level CE resource is covered._
+- `budgets`

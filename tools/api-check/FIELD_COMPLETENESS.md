@@ -47,7 +47,7 @@ work_package   assignee                   associated_resource      COVERED    �
 work_package   version                    associated_resource      COVERED    —
 work_package   targetVersions             associated_resources     COVERED    —
 work_package   parent                     associated_resource      COVERED    —
-work_package   budget                     associated_resource      EXCLUDED   enterprise
+work_package   budget                     associated_resource      EXCLUDED   internal_other
 work_package   customActions              resources                EXCLUDED   enterprise
 work_package   attachments                property                 EXCLUDED   large_embedded
 work_package   _meta                      property                 EXCLUDED   enterprise
@@ -113,13 +113,13 @@ _None — every checked field is modeled or has a documented exclusion._
 
 ### enterprise
 
-- `work_package.budget` — Budgets is Enterprise-only per this server's CE-only policy; associated_resource :budget (work_package_representer.rb:613) has no representer-level EnterpriseToken guard, so this can't be auto-derived.
 - `work_package.customActions` — Custom Actions is Enterprise-only per the CE-only policy (resources :customActions, work_package_representer.rb:625).
 - `work_package._meta` — Backs the Enterprise-only Baseline Comparisons feature (TimestampedRepresenter, gated by timestamps_active?); never appears in any response this server produces, since nothing here requests historic timestamps.
 - `work_package.attributesByTimestamp` — Same Enterprise-only Baseline Comparisons feature as _meta above (TimestampedRepresenter, property :attributes_by_timestamp, timestamps_active? gated).
 
 ### internal_other
 
+- `work_package.budget` — Budgets are Community Edition (bundled module, no EnterpriseToken guard), but this client doesn't model them yet; tracked as a coverage gap in check_coverage.py's CONFIRMED_GAPS.
 - `user.password` — Write-only property (getter: ->(*) {}, render_nil: false) -- never appears in a read response, per user_representer.rb's own '# Write-only properties' comment.
 - `user.currentPassword` — Write-only property (getter: ->(*) {}, render_nil: false), same as password.
 - `work_package.date` — Milestone-only date_property (work_package_representer.rb:380, getter: default_date_getter(:due_date)); this client normalizes it into start_date/due_date at runtime (both get the same value for a milestone) rather than modeling a separate field -- a deliberate composite/semantic mapping, not an unmodeled field.

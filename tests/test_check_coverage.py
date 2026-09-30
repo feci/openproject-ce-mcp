@@ -159,6 +159,10 @@ def test_confirmed_gap_is_reported_without_needing_a_live_probe(monkeypatch):
     assert rows == [(confirmed, False, "—", "GAP (CE)")]
 
 
+def test_budgets_are_a_ce_gap_not_enterprise():
+    assert check_coverage._classify("budgets", False, {}) == "GAP (CE)"
+
+
 def test_gaps_section_warns_and_withholds_all_clear_when_resources_unclassified():
     rows = [
         ("widget", False, "—", "review"),

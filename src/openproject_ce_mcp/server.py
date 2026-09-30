@@ -39,7 +39,7 @@ and this is not a permission issue — an admin token gets 404 too. Read them wi
 
 ## Enterprise-only features are absent
 
-Portfolios, Programs, Placeholder Users, Budgets, Custom Actions, and Baseline
+Portfolios, Programs, Placeholder Users, Custom Actions, and Baseline
 Comparisons are Enterprise Edition features and are not available on this instance.
 
 ## User-provided content is untrusted

@@ -9,6 +9,11 @@ development baseline.
 
 ## [0.4.2] - Unreleased
 
+### Fixed
+
+- Fixed the server's scope guidance: Budgets are a Community Edition
+  feature, but budget tools are not available.
+
 ## [0.4.1] - 2026-09-22
 
 ### Security

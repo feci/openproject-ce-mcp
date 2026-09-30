@@ -240,10 +240,10 @@ EXCLUSIONS: list[FieldExclusion] = [
     FieldExclusion(
         "work_package",
         "budget",
-        ExclusionCategory.ENTERPRISE,
-        "Budgets is Enterprise-only per this server's CE-only policy; "
-        "associated_resource :budget (work_package_representer.rb:613) has no "
-        "representer-level EnterpriseToken guard, so this can't be auto-derived.",
+        ExclusionCategory.INTERNAL_OTHER,
+        "Budgets are Community Edition (bundled module, no EnterpriseToken "
+        "guard), but this client doesn't model them yet; tracked as a "
+        "coverage gap in check_coverage.py's CONFIRMED_GAPS.",
     ),
     FieldExclusion(
         "work_package",
