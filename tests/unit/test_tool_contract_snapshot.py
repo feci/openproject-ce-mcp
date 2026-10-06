@@ -6119,6 +6119,59 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "scope": "work_package",
         "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
+    "list_available_assignees": {
+        "description_hash": "9e1b6eab64c6fe00e7df6c93ec7d635edebaebab453625572696408dd4a8f632",
+        "input_schema": {
+            "properties": {
+                "work_package_id": {
+                    "anyOf": [{"type": "integer"}, {"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "title": "Work Package Id",
+                },
+                "project": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None, "title": "Project"},
+                "select": {
+                    "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
+                    "default": None,
+                    "title": "Select",
+                },
+            },
+            "title": "list_available_assigneesArguments",
+            "type": "object",
+            "additionalProperties": False,
+        },
+        "output_schema": None,
+        "classification": "read",
+        "scope": "work_package",
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_READ",),
+    },
+    "list_work_package_available_relation_candidates": {
+        "description_hash": "7a1e4507b5997234e285e6c17ee83ffa458f6e6d593a9f1acc14884ae516340f",
+        "input_schema": {
+            "properties": {
+                "work_package_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "title": "Work Package Id"},
+                "query": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None, "title": "Query"},
+                "relation_type": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "title": "Relation Type",
+                },
+                "limit": {"anyOf": [{"type": "integer"}, {"type": "null"}], "default": None, "title": "Limit"},
+                "select": {
+                    "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
+                    "default": None,
+                    "title": "Select",
+                },
+            },
+            "required": ["work_package_id"],
+            "title": "list_work_package_available_relation_candidatesArguments",
+            "type": "object",
+            "additionalProperties": False,
+        },
+        "output_schema": None,
+        "classification": "read",
+        "scope": "work_package",
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_READ",),
+    },
 }
 
 

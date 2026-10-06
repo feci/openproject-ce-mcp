@@ -226,3 +226,64 @@ def test_set_work_package_watcher_schema() -> None:
     }
     # Dict equality above doesn't check key order -- assert it separately.
     assert list(tool.parameters["properties"]) == ["work_package_id", "user_id", "watching", "confirm"]
+
+
+def test_list_available_assignees_schema() -> None:
+    tool = _tools(create_app(_make_settings()))["list_available_assignees"]
+    assert (
+        tool.description
+        == 'List the users and groups OpenProject accepts as assignee.\n\nPass work_package_id for an existing work package, or project (id or\nidentifier) for one not created yet -- exactly one of the two.\nwork_package_id: internal id (e.g., 952) or display_id (e.g., "PROJ-51"), not UI display number.\nThe same principals are valid as responsible (accountable).\n\nselect fields: id, type, name, email (see server instructions for\nselect\'s general semantics).\n'
+    )
+    assert tool.output_schema is None
+    assert tool.parameters == {
+        "properties": {
+            "work_package_id": {
+                "anyOf": [{"type": "integer"}, {"type": "string"}, {"type": "null"}],
+                "default": None,
+                "title": "Work Package Id",
+            },
+            "project": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None, "title": "Project"},
+            "select": {
+                "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
+                "default": None,
+                "title": "Select",
+            },
+        },
+        "title": "list_available_assigneesArguments",
+        "type": "object",
+        "additionalProperties": False,
+    }
+    # Dict equality above doesn't check key order -- assert it separately.
+    assert list(tool.parameters["properties"]) == ["work_package_id", "project", "select"]
+
+
+def test_list_work_package_available_relation_candidates_schema() -> None:
+    tool = _tools(create_app(_make_settings()))["list_work_package_available_relation_candidates"]
+    assert (
+        tool.description
+        == "List work packages that can be the other end of a new relation.\n\nwork_package_id: internal id (e.g., 952) or display_id (e.g., \"PROJ-51\"), not UI display number.\nquery: text to match against the candidates' subject or id.\nrelation_type: only candidates valid for this relation (relates,\nduplicates, duplicated, blocks, blocked, precedes, follows, includes,\npartof, requires, required) -- OpenProject leaves out e.g. a work package\nthat would create a cycle. Candidates in projects outside\nOPENPROJECT_READ_PROJECTS are left out. limit is capped at\nOPENPROJECT_MAX_PAGE_SIZE (default 50).\n\nselect fields: id, display_id, subject, type, status, project (see server\ninstructions for select's general semantics).\n"
+    )
+    assert tool.output_schema is None
+    assert tool.parameters == {
+        "properties": {
+            "work_package_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "title": "Work Package Id"},
+            "query": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None, "title": "Query"},
+            "relation_type": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "title": "Relation Type",
+            },
+            "limit": {"anyOf": [{"type": "integer"}, {"type": "null"}], "default": None, "title": "Limit"},
+            "select": {
+                "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
+                "default": None,
+                "title": "Select",
+            },
+        },
+        "required": ["work_package_id"],
+        "title": "list_work_package_available_relation_candidatesArguments",
+        "type": "object",
+        "additionalProperties": False,
+    }
+    # Dict equality above doesn't check key order -- assert it separately.
+    assert list(tool.parameters["properties"]) == ["work_package_id", "query", "relation_type", "limit", "select"]

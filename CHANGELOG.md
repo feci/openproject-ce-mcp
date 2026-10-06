@@ -14,6 +14,7 @@ development baseline.
 - `update_work_package_comment` previews and confirms replacement of an existing
   comment, including permission checks and warnings about notifications and
   irreversible text replacement.
+- List available assignees and relation candidates for work packages.
 - CI now installs the built wheel via both `pipx` and `uv tool install` in
   an isolated environment outside the repository, checks `--version`,
   `configure --help`, `doctor --help`, and a bounded MCP stdio startup, and
