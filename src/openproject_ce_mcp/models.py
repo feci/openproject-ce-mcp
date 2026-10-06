@@ -2078,3 +2078,16 @@ class GitlabMergeRequestSummary:
 @dataclass
 class GitlabMergeRequestListResult(CollectionResult):
     results: list[GitlabMergeRequestSummary]
+
+
+@dataclass
+class ContainerAttachmentWriteResult(ConfirmationHeader):
+    """Upload result for an attachment on a container other than a work
+    package (wiki page, forum post, meeting, comment)."""
+
+    attachment_id: int | None
+    container_type: str
+    container_id: int
+    payload: dict[str, Any]
+    validation_errors: dict[str, str]
+    result: AttachmentSummary | None

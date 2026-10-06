@@ -29,11 +29,13 @@ from .tools_admin import (  # noqa: F401 -- @register_tool side effect; re-expor
     update_user,
 )
 from .tools_attachments import (  # noqa: F401 -- @register_tool side effect; re-exported, test_project_and_domain_tools.py imports all six of these from here
+    create_container_attachment,
     create_work_package_attachment,
     delete_attachment,
     delete_file_link,
     get_attachment,
     get_attachment_content,
+    list_container_attachments,
     list_work_package_attachments,
     list_work_package_file_links,
 )
@@ -279,6 +281,7 @@ READ_TOOLS_BY_SCOPE: dict[str, tuple[str, ...]] = {
         "list_work_package_reactions",
         "list_reminders",
         "get_work_package_relations",
+        "list_container_attachments",
         "list_work_package_attachments",
         "get_attachment",
         "get_attachment_content",
@@ -516,6 +519,7 @@ _PROJECT_SCOPED_READ_TOOLS: frozenset[str] = frozenset(
         "list_work_package_reactions",
         "list_reminders",
         "get_work_package_relations",
+        "list_container_attachments",
         "list_work_package_attachments",
         "get_attachment",
         "get_attachment_content",
@@ -555,16 +559,10 @@ _PROJECT_SCOPED_READ_TOOLS: frozenset[str] = frozenset(
     }
 )
 
-# create_work_package_attachment is NOT in WRITE_TOOLS_BY_SCOPE["work_package"]
-# above: it needs work_package write AND a configured OPENPROJECT_ATTACHMENT_ROOT
-# — an empty root disables local uploads entirely (app/services/
-# attachment_service.py's _attachment_root has no cwd fallback), so registering the tool without a root
-# would only expose a schema whose every call fails, wasting context. Its own
-# named constant, handled by a bespoke AND-gate branch in enabled_tool_names()
-# below (mirroring the "personal" bespoke branch), rather than a generic
-# mechanism — this is currently the only scope-flag-AND-config-value gate in
-# the codebase.
-ATTACHMENT_UPLOAD_TOOLS: tuple[str, ...] = ("create_work_package_attachment",)
+# Uploads require a configured root and usable project scope. Work-package
+# uploads need work_package write; other containers need any one of project,
+# meeting or work_package write, then check their own scope on each call.
+ATTACHMENT_UPLOAD_TOOLS: tuple[str, ...] = ("create_work_package_attachment", "create_container_attachment")
 
 # Additional read scopes required by tools whose home group above is not
 # sufficient on its own (verified against each client method, not guessed).
@@ -646,12 +644,12 @@ def enabled_tool_names(settings: Settings) -> tuple[str, ...]:
     if settings.read_enabled("personal") and settings.write_enabled("personal"):
         include(PERSONAL_MUTATION_TOOLS)
 
-    # Bespoke AND-gate: local upload needs work_package write, a configured
-    # OPENPROJECT_ATTACHMENT_ROOT, AND usable project scope (it is
-    # project-/work-package-scoped like the rest of WRITE_TOOLS_BY_SCOPE's
-    # project-scoped entries) — see ATTACHMENT_UPLOAD_TOOLS above.
-    if settings.write_enabled("work_package") and settings.attachment_root and project_scope_usable:
-        include(ATTACHMENT_UPLOAD_TOOLS)
+    # Each call also checks its container's own write scope and project.
+    if settings.attachment_root and project_scope_usable:
+        if settings.write_enabled("work_package"):
+            include(("create_work_package_attachment",))
+        if any(settings.write_enabled(scope) for scope in ("project", "meeting", "work_package")):
+            include(("create_container_attachment",))
 
     return tuple(enabled)
 

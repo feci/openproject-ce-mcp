@@ -424,12 +424,25 @@ saving over N individual `update_work_package` calls is real but modest.
 | `get_attachment_content` | Read an attachment's content: images come back as images the model can see, text-like files as text, anything else as metadata explaining why it wasn't inlined |
 | `create_work_package_attachment` | Validate and then upload an attachment to a work package; only writes when called again with `confirm=true` |
 | `delete_attachment` | Validate and then delete an attachment; only deletes when called again with `confirm=true` |
+| `list_container_attachments` | List attachments on a wiki page, forum post, meeting or comment (`container_type` + `container_id`) |
+| `create_container_attachment` | Validate and then upload an attachment to a wiki page, forum post, meeting or comment; only writes when called again with `confirm=true` |
 
 `OPENPROJECT_ATTACHMENT_ROOT` must be set to an absolute directory for local
-uploads to work at all — `create_work_package_attachment` isn't even registered
-otherwise, no working-directory fallback. Once set, files outside it — and
+uploads to work at all — `create_work_package_attachment` and
+`create_container_attachment` aren't even registered otherwise, no
+working-directory fallback. Once set, files outside it — and
 credential/config files such as `.mcp.json`, `.env`, or private keys even inside
 it — are refused, so a tool call cannot exfiltrate local secrets.
+
+`create_container_attachment` is registered when the root is configured and
+any of project, meeting or work-package writes is enabled, with usable project
+scope. `create_work_package_attachment` still requires work-package writes.
+
+`list_container_attachments`/`create_container_attachment` check the
+container's own scope flag (project for wiki pages and posts, meeting for
+meetings, work package for comments) and its project against the allowlists.
+`get_attachment`, `get_attachment_content` and `delete_attachment` still accept
+work package attachments only.
 
 ### Reading attachment content
 

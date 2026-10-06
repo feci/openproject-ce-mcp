@@ -87,6 +87,51 @@ def _mark_notification_read_handler(request: httpx.Request) -> httpx.Response:
     raise AssertionError
 
 
+def _create_container_attachment_handler(request: httpx.Request) -> httpx.Response:
+    if request.url.path == "/api/v3/wiki_pages/12" and request.method == "GET":
+        return httpx.Response(
+            200,
+            json={
+                "id": 12,
+                "_type": "WikiPage",
+                "title": "Runbook",
+                "_links": {"project": {"href": "/api/v3/projects/1", "title": "Demo"}},
+            },
+            request=request,
+        )
+    if request.url.path == "/api/v3/configuration" and request.method == "GET":
+        return httpx.Response(200, json={"maximumAttachmentFileSize": 5000}, request=request)
+    if request.url.path == "/api/v3/wiki_pages/12/attachments" and request.method == "POST":
+        assert request.headers["content-type"].startswith("multipart/form-data")
+        assert b'name="file"; filename="note.txt"' in request.content
+        return httpx.Response(
+            200,
+            json={
+                "id": 100,
+                "fileName": "note.txt",
+                "fileSize": 30,
+                "status": "uploaded",
+                "_links": {
+                    "self": {"href": "/api/v3/attachments/100"},
+                    "container": {"href": "/api/v3/wiki_pages/12"},
+                    "author": {"href": "/api/v3/users/1", "title": "Bot"},
+                },
+            },
+            request=request,
+        )
+    _unexpected(request)
+    raise AssertionError
+
+
+def _materialize_container_attachment_case(tmp_path: Path) -> MaterializedWriteToolCase:
+    file_path = tmp_path / "note.txt"
+    file_path.write_text("hello from the attachment test")
+    return MaterializedWriteToolCase(
+        kwargs={"container_type": "wiki_page", "container_id": 12, "file_path": str(file_path), "description": None},
+        settings=dataclasses.replace(_base_settings_for_attachment(), attachment_root=str(tmp_path)),
+    )
+
+
 # --- create_work_package_attachment ----------------------------------------
 #
 # Needs a real local file under tmp_path and a matching Settings.attachment_root
@@ -203,5 +248,14 @@ PERSONAL_ATTACHMENT_CASES: dict[str, WriteToolCase] = {
         handler=_create_work_package_attachment_handler,
         write_request=("POST", "/api/v3/work_packages/42/attachments"),
         materialize=_materialize_attachment_case,
+    ),
+    "create_container_attachment": WriteToolCase(
+        tool="create_container_attachment",
+        kwargs={"container_type": "wiki_page", "container_id": 12, "file_path": "", "description": None},
+        settings=_base_settings_for_attachment(),
+        write_scope="project",
+        handler=_create_container_attachment_handler,
+        write_request=("POST", "/api/v3/wiki_pages/12/attachments"),
+        materialize=_materialize_container_attachment_case,
     ),
 }

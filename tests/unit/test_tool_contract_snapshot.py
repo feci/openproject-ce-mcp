@@ -130,6 +130,13 @@ def _classify() -> dict[str, tuple[str, str, tuple[str, ...]]]:
                 "OPENPROJECT_ATTACHMENT_ROOT",
             ),
         )
+    # Container uploads need a root and any one paired container scope, not
+    # specifically work_package. The OR-gate is exercised in test_tool_groups.
+    classification["create_container_attachment"] = (
+        "write",
+        "container",
+        ("OPENPROJECT_ATTACHMENT_ROOT",),
+    )
     for name, additional_scopes in tools.ADDITIONAL_READ_SCOPES_BY_TOOL.items():
         kind, scope, env_vars = classification[name]
         additional_env_vars = tuple(READ_SCOPE_ENV_VAR[s] for s in sorted(additional_scopes))
@@ -6118,6 +6125,54 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "classification": "write",
         "scope": "work_package",
         "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
+    },
+    "list_container_attachments": {
+        "description_hash": "ca63734596cd2e71c9b787725d190640423306362125f3c02e74ec3c7dad157d",
+        "input_schema": {
+            "properties": {
+                "container_type": {"title": "Container Type", "type": "string"},
+                "container_id": {"title": "Container Id", "type": "integer"},
+                "offset": {"default": 1, "title": "Offset", "type": "integer"},
+                "limit": {"anyOf": [{"type": "integer"}, {"type": "null"}], "default": None, "title": "Limit"},
+                "select": {
+                    "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
+                    "default": None,
+                    "title": "Select",
+                },
+            },
+            "required": ["container_type", "container_id"],
+            "title": "list_container_attachmentsArguments",
+            "type": "object",
+            "additionalProperties": False,
+        },
+        "output_schema": None,
+        "classification": "read",
+        "scope": "work_package",
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_READ",),
+    },
+    "create_container_attachment": {
+        "description_hash": "49e26c0cb5bfecb5fdfc895203e2345442315d9d9e218f6428116860263b0564",
+        "input_schema": {
+            "properties": {
+                "container_type": {"title": "Container Type", "type": "string"},
+                "container_id": {"title": "Container Id", "type": "integer"},
+                "file_path": {"title": "File Path", "type": "string"},
+                "description": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "title": "Description",
+                },
+                "confirm": {"default": False, "title": "Confirm", "type": "boolean"},
+            },
+            "required": ["container_type", "container_id", "file_path"],
+            "title": "create_container_attachmentArguments",
+            "type": "object",
+            "additionalProperties": False,
+        },
+        "output_schema": None,
+        "classification": "write",
+        "scope": "container",
+        "capability_env_vars": ("OPENPROJECT_ATTACHMENT_ROOT",),
     },
 }
 
