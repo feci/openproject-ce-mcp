@@ -2404,6 +2404,9 @@ class WorkPackageService:
                 f"OpenProject does not allow the configured user to edit activity {activity_id}: "
                 "only the comment's author, or a role allowed to edit other users' comments, can."
             )
+        existing_comment = (activity.get("comment") or {}).get("raw") or ""
+        if not existing_comment.strip():
+            raise InvalidInputError(f"Activity {activity_id} has no existing comment to edit.")
         payload: dict[str, Any] = {"comment": comment}
 
         if not confirm:
@@ -2413,6 +2416,8 @@ class WorkPackageService:
                 ready=True,
                 message=(
                     f"OpenProject is ready to replace the text of comment {activity_id}. "
+                    "Editing may notify people; PATCH has no notify=false option. "
+                    "The old text is overwritten, with no comment-version history or recovery through OpenProject/API. "
                     "Ask for confirmation, then call again with confirm=true."
                 ),
                 work_package_id=work_package_id,

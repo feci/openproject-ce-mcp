@@ -1274,7 +1274,10 @@ async def update_work_package_comment(
     activity id, as returned by get_work_package_activities (or by
     add_work_package_comment's result). comment replaces the whole text; it is
     not appended. Whether the comment is internal stays as it was: OpenProject
-    does not change that on edit.
+    does not change that on edit. Editing may notify people; PATCH has no
+    notify=false option. The old text is overwritten, with no comment-version
+    history or recovery through OpenProject/API. Activities without an existing
+    non-blank comment are rejected, including in preview.
     OpenProject lets the comment's author edit it, and otherwise only a role
     allowed to edit other users' comments; the tool reports that before
     writing, in preview too.

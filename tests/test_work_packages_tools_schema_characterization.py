@@ -1686,7 +1686,7 @@ def test_update_work_package_comment_schema() -> None:
     tool = _tools(create_app(_make_settings()))["update_work_package_comment"]
     assert (
         tool.description
-        == "Prepare or replace the text of an existing work package comment.\n\nThe tool only writes when confirm=true. activity_id is the comment's\nactivity id, as returned by get_work_package_activities (or by\nadd_work_package_comment's result). comment replaces the whole text; it is\nnot appended. Whether the comment is internal stays as it was: OpenProject\ndoes not change that on edit.\nOpenProject lets the comment's author edit it, and otherwise only a role\nallowed to edit other users' comments; the tool reports that before\nwriting, in preview too.\n"
+        == "Prepare or replace the text of an existing work package comment.\n\nThe tool only writes when confirm=true. activity_id is the comment's\nactivity id, as returned by get_work_package_activities (or by\nadd_work_package_comment's result). comment replaces the whole text; it is\nnot appended. Whether the comment is internal stays as it was: OpenProject\ndoes not change that on edit. Editing may notify people; PATCH has no\nnotify=false option. The old text is overwritten, with no comment-version\nhistory or recovery through OpenProject/API. Activities without an existing\nnon-blank comment are rejected, including in preview.\nOpenProject lets the comment's author edit it, and otherwise only a role\nallowed to edit other users' comments; the tool reports that before\nwriting, in preview too.\n"
     )
     assert tool.output_schema is None
     assert tool.parameters == {

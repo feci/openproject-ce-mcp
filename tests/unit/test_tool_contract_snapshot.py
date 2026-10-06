@@ -6064,7 +6064,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "update_work_package_comment": {
-        "description_hash": "3e7568e4931b920960544db11e2cc9de4dfd2d469b2e7518354d9ba22258ccc5",
+        "description_hash": "9aad77f22b883185700136dcf18c5426d3b3d00b28762f4eab403e548dfe66f0",
         "input_schema": {
             "properties": {
                 "activity_id": {"title": "Activity Id", "type": "integer"},

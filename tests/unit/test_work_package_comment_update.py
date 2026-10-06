@@ -17,6 +17,7 @@ from _client_test_helpers import _write_enabled_settings, make_settings
 
 from openproject_ce_mcp.app.errors import (
     CapabilityDisabledError,
+    InvalidInputError,
     OpenProjectPermissionDeniedError,
     OpenProjectServerError,
     ProjectScopeDeniedError,
@@ -88,6 +89,8 @@ async def test_preview_does_not_write() -> None:
     assert result.state == "preview" and result.ready
     assert result.payload == {"comment": "New text."}
     assert result.result is None
+    assert "notify=false" in result.message
+    assert "no comment-version history" in result.message
     await client.aclose()
 
 
@@ -141,6 +144,25 @@ async def test_writes_disabled_blocks_the_confirmed_call() -> None:
 
     with pytest.raises(CapabilityDisabledError):
         await client.work_package.update_comment(activity_id=77, comment="New text.", confirm=True)
+
+    assert patches == []
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("confirm", [False, True])
+@pytest.mark.parametrize("existing_comment", [None, {}, {"raw": ""}, {"raw": " \n\t"}])
+async def test_activity_without_existing_comment_is_rejected(existing_comment: dict | None, confirm: bool) -> None:
+    activity = _activity()
+    if existing_comment is None:
+        del activity["comment"]
+    else:
+        activity["comment"] = existing_comment
+    patches: list[dict] = []
+    client = OpenProjectClient(_write_enabled_settings(), transport=httpx.MockTransport(_handler(activity, patches)))
+
+    with pytest.raises(InvalidInputError, match="no existing comment"):
+        await client.work_package.update_comment(activity_id=77, comment="New text.", confirm=confirm)
 
     assert patches == []
     await client.aclose()
