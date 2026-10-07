@@ -1364,6 +1364,29 @@ async def test_bulk_create_work_packages_rejects_invalid_select_field() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("select", [["index", "success", "error", "ready"], ["index", "success"]])
+async def test_bulk_create_work_packages_accepts_item_wrapper_fields_in_select(select) -> None:
+    # The wrapper fields are emitted on every item regardless of select, so a
+    # caller that lists them explicitly must not be rejected -- even when it
+    # lists nothing else.
+    class StubClient:
+        @property
+        def work_package(self):
+            return self
+
+        async def bulk_create(self, **kwargs):
+            return {"action": "bulk_create", "items": []}
+
+    result = await bulk_create_work_packages(
+        FakeContext(StubClient()),  # type: ignore[arg-type]
+        items=[{"project": "demo", "type": "Task", "subject": "ok"}],
+        select=select,
+        confirm=False,
+    )
+    assert result["action"] == "bulk_create"
+
+
+@pytest.mark.asyncio
 async def test_bulk_update_work_packages_accepts_select() -> None:
     # Same split as the bulk_create test above: validation only, not threading.
     class StubClient:
