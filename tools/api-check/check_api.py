@@ -487,7 +487,7 @@ def _extract_client_resources() -> set[str]:
 def _extract_client_filters() -> set[str]:
     keys: set[str] = set()
     for text in _all_source_texts():
-        keys.update(re.findall(r'\{"([a-z_]+)":\s*\{"operator"', text))
+        keys.update(re.findall(r'\{"([A-Za-z_]+)":\s*\{"operator"', text))
     return keys - FILTER_SKIP
 
 
@@ -541,7 +541,8 @@ def _filter_present(version: str, filter_key: str) -> bool:
     qroot = SOURCES / version / "app" / "models" / "queries"
     if not qroot.exists():
         return False
-    name = FILTER_ALIASES.get(filter_key, filter_key)
+    # Wire keys are camelCase where the Ruby file is snake_case (readIAN -> read_ian_filter.rb).
+    name = re.sub(r"(?<=[a-z])(?=[A-Z])", "_", FILTER_ALIASES.get(filter_key, filter_key)).lower()
     # Filters are <name>_filter.rb files (allow plural dir layouts).
     return _find_any(qroot, f"{name}_filter.rb")
 
