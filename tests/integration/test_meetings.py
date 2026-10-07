@@ -40,7 +40,7 @@ import uuid
 
 import pytest
 
-from openproject_ce_mcp.client import InvalidInputError, NotFoundError, OpenProjectClient, PermissionDeniedError
+from openproject_ce_mcp.client import ConflictError, NotFoundError, OpenProjectClient, PermissionDeniedError
 
 pytestmark = pytest.mark.integration
 
@@ -751,8 +751,9 @@ async def test_cancel_already_materialized_occurrence_fails(
     meeting_ids: list[int],
 ) -> None:
     """Documents the real OpenProject 409 for the "already materialized,
-    not cancelled" case -- surfaces as InvalidInputError with no
-    special-casing needed client-side."""
+    not cancelled" case -- surfaces as ConflictError (the state-conflict
+    class the HTTP mapper assigns to 409) with no special-casing needed
+    client-side."""
     try:
         result = await client.recurring_meeting.create(
             project=test_project,
@@ -778,7 +779,8 @@ async def test_cancel_already_materialized_occurrence_fails(
     assert init_result.ready, init_result.validation_errors
     meeting_ids.append(init_result.result.id)
 
-    with pytest.raises(InvalidInputError):
+    with pytest.raises(ConflictError) as excinfo:
         await client.recurring_meeting.cancel_occurrence(
             recurring_meeting_id=recurring_meeting_id, start_time=target.start_time, confirm=True
         )
+    assert excinfo.value.code == "CONFLICT"
