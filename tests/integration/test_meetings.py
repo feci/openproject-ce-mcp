@@ -36,6 +36,7 @@ actual outcome once observed against a real instance:
 
 from __future__ import annotations
 
+import os
 import uuid
 
 import pytest
@@ -47,6 +48,8 @@ from openproject_ce_mcp.client import (
     OpenProjectClient,
     PermissionDeniedError,
 )
+
+from .conftest import _run_rails_script
 
 pytestmark = pytest.mark.integration
 
@@ -615,6 +618,53 @@ async def test_create_get_update_delete_recurring_meeting(
     delete_result = await client.recurring_meeting.delete(recurring_meeting_id=recurring_meeting_id, confirm=True)
     assert delete_result.ready and delete_result.state == "confirmed"
     recurring_meeting_ids.remove(recurring_meeting_id)
+
+
+async def test_end_recurring_meeting(
+    client: OpenProjectClient, test_project: str, recurring_meeting_ids: list[int]
+) -> None:
+    if not os.environ.get("OPENPROJECT_DOCKER_SERVICE"):
+        pytest.skip("OPENPROJECT_DOCKER_SERVICE not set (needed to backdate the series' start)")
+    title = f"[integration-test] recurring end {uuid.uuid4().hex[:8]}"
+    try:
+        result = await client.recurring_meeting.create(
+            project=test_project,
+            title=title,
+            frequency="weekly",
+            start_time="2030-01-07T09:00:00Z",
+            confirm=True,
+        )
+    except NotFoundError:
+        pytest.skip("Recurring meetings not available, or OpenProject < 17.4, on this instance")
+    assert result.ready, result.validation_errors
+    recurring_meeting_id = result.recurring_meeting_id
+    recurring_meeting_ids.append(recurring_meeting_id)
+
+    # The API only accepts a start in the future, while ending sets the end
+    # date to yesterday, which must lie after the first occurrence -- so the
+    # series is backdated behind the API's back.
+    _run_rails_script(
+        """
+        RecurringMeeting.find(ENV.fetch("RECURRING_MEETING_ID").to_i).update_columns(start_time: Time.utc(2020, 1, 6, 9))
+        puts "BACKDATED=1"
+        """,
+        result_key="BACKDATED",
+        env={"RECURRING_MEETING_ID": str(recurring_meeting_id)},
+    )
+
+    preview = await client.recurring_meeting.end(recurring_meeting_id=recurring_meeting_id)
+    assert preview.state == "preview"
+    assert preview.payload == {"id": recurring_meeting_id, "title": title}
+
+    try:
+        ended = await client.recurring_meeting.end(recurring_meeting_id=recurring_meeting_id, confirm=True)
+    except NotFoundError:
+        pytest.skip("Ending a recurring meeting series requires OpenProject 17.8+ on this instance")
+    assert ended.state == "confirmed"
+    assert ended.recurring_meeting_id == recurring_meeting_id
+
+    upcoming = await client.recurring_meeting.list_occurrences(recurring_meeting_id, filter="upcoming", limit=5)
+    assert upcoming.results == []
 
 
 async def test_list_recurring_meetings(

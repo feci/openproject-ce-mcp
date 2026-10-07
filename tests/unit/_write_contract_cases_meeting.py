@@ -285,6 +285,14 @@ def _delete_recurring_meeting_handler(request: httpx.Request) -> httpx.Response:
     return _unexpected(request)
 
 
+def _end_recurring_meeting_handler(request: httpx.Request) -> httpx.Response:
+    if request.url.path == "/api/v3/recurring_meetings/51" and request.method == "GET":
+        return httpx.Response(200, json=_recurring_meeting_payload(), request=request)
+    if request.url.path == "/api/v3/recurring_meetings/51/end" and request.method == "POST":
+        return httpx.Response(200, json=_recurring_meeting_payload(), request=request)
+    return _unexpected(request)
+
+
 def _init_occurrence_handler(request: httpx.Request) -> httpx.Response:
     if request.url.path == "/api/v3/recurring_meetings/51" and request.method == "GET":
         return httpx.Response(200, json=_recurring_meeting_payload(), request=request)
@@ -432,6 +440,14 @@ MEETING_CASES: dict[str, WriteToolCase] = {
         write_scope="meeting",
         handler=_delete_recurring_meeting_handler,
         write_request=("DELETE", "/api/v3/recurring_meetings/51"),
+    ),
+    "end_recurring_meeting": WriteToolCase(
+        tool="end_recurring_meeting",
+        kwargs={"recurring_meeting_id": 51},
+        settings=_settings(),
+        write_scope="meeting",
+        handler=_end_recurring_meeting_handler,
+        write_request=("POST", "/api/v3/recurring_meetings/51/end"),
     ),
     "init_recurring_meeting_occurrence": WriteToolCase(
         tool="init_recurring_meeting_occurrence",

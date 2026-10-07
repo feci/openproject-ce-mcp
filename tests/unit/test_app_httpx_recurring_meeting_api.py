@@ -162,6 +162,22 @@ async def test_delete_requests_the_recurring_meeting_id() -> None:
 
 
 @pytest.mark.asyncio
+async def test_end_posts_to_the_end_route_and_returns_the_series() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path == "/api/v3/recurring_meetings/51/end"
+        assert request.headers["content-type"] == "application/json"
+        assert json.loads(request.content) == {}
+        return httpx.Response(200, json=_recurring_meeting_payload(), request=request)
+
+    async with _client(handler) as http_client:
+        api = HttpxRecurringMeetingApi(HttpxTransport(http_client))
+        record = await api.end(51)
+
+    assert record.summary.id == 51
+
+
+@pytest.mark.asyncio
 async def test_list_occurrences_sends_limit_only_for_upcoming_filter() -> None:
     seen_params = {}
 

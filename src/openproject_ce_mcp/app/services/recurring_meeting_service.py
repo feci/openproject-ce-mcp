@@ -349,6 +349,39 @@ class RecurringMeetingService:
         )
         return self._to_meeting_write_result("delete", outcome)
 
+    async def end(self, *, recurring_meeting_id: int, confirm: bool = False) -> RecurringMeetingWriteResult:
+        current = await call_version_gated(
+            lambda: self._api.get(recurring_meeting_id), feature="Recurring meetings", floor="17.4"
+        )
+        scope_policy.ensure_project_write_link_allowed(
+            current.project_link, settings=self._settings, project_id_to_identifier=self._project_id_to_identifier
+        )
+        recurring_meeting = self._stamp(current.summary)
+        payload = {"id": recurring_meeting.id, "title": recurring_meeting.title}
+
+        async def _commit(p: dict[str, Any]) -> RecurringMeetingSummary:
+            record = await call_version_gated(
+                lambda: self._api.end(recurring_meeting_id), feature="Ending a recurring meeting series", floor="17.8"
+            )
+            return self._stamp(record.summary)
+
+        outcome = await _finalize_write(
+            confirm=confirm,
+            payload=payload,
+            validation_errors={},
+            identity={"recurring_meeting_id": recurring_meeting.id, "project": recurring_meeting.project},
+            ensure_write_enabled=lambda: access.ensure_write_enabled("meeting", settings=self._settings),
+            commit=_commit,
+            committed_identity=lambda d: {"recurring_meeting_id": d.id, "project": d.project},
+            rejected_message="",
+            preview_message=(
+                "OpenProject found the recurring meeting. Ask for confirmation, then call again "
+                "with confirm=true to end the series."
+            ),
+            success_message="Recurring meeting series ended successfully.",
+        )
+        return self._to_meeting_write_result("end", outcome)
+
     def _to_meeting_write_result(
         self, action: str, outcome: _WriteOutcome[RecurringMeetingSummary]
     ) -> RecurringMeetingWriteResult:

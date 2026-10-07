@@ -2532,6 +2532,36 @@ def test_delete_recurring_meeting_schema() -> None:
     assert list(tool.parameters["properties"]) == ["recurring_meeting_id", "confirm"]
 
 
+def test_end_recurring_meeting_schema() -> None:
+    tool = _tools(create_app(_make_settings()))["end_recurring_meeting"]
+    assert (
+        tool.description
+        == "Prepare or end an OpenProject recurring meeting series; only ends it\nwhen called again with confirm=true.\n\nEnding keeps the series and its past occurrences but schedules no\nfurther ones, unlike delete_recurring_meeting. OpenProject sets the\nseries' end date to yesterday, so a series whose first occurrence still\nlies in the future is rejected with a validation error.\n\nRequires OpenProject 17.8+.\n"
+    )
+    assert tool.output_schema is None
+    assert tool.parameters == {
+        "properties": {
+            "recurring_meeting_id": {
+                "title": "Recurring Meeting Id",
+                "type": "integer",
+            },
+            "confirm": {
+                "default": False,
+                "title": "Confirm",
+                "type": "boolean",
+            },
+        },
+        "required": [
+            "recurring_meeting_id",
+        ],
+        "title": "end_recurring_meetingArguments",
+        "type": "object",
+        "additionalProperties": False,
+    }
+    # Dict equality above doesn't check key order -- assert it separately.
+    assert list(tool.parameters["properties"]) == ["recurring_meeting_id", "confirm"]
+
+
 def test_list_recurring_meeting_occurrences_schema() -> None:
     tool = _tools(create_app(_make_settings()))["list_recurring_meeting_occurrences"]
     assert (

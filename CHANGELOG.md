@@ -62,6 +62,8 @@ development baseline.
   request/response payload content.
 - `list_meetings` accepts a `title` filter (case-insensitive substring,
   also matching a recurring series' title) on OpenProject 17.9 and later.
+- `end_recurring_meeting` ends a recurring meeting series without deleting
+  it or its past occurrences (OpenProject 17.8 and later).
 
 ### Changed
 

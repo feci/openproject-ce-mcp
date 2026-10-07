@@ -132,6 +132,13 @@ class HttpxRecurringMeetingApi:
     async def delete(self, recurring_meeting_id: int) -> None:
         await self._transport.delete(f"recurring_meetings/{recurring_meeting_id}")
 
+    async def end(self, recurring_meeting_id: int) -> RecurringMeetingRecord:
+        # The route takes no attributes, but OpenProject answers 406 to a POST
+        # without a JSON content type, so an empty object is sent.
+        return self._record(
+            await self._transport.post_json(f"recurring_meetings/{recurring_meeting_id}/end", json_body={})
+        )
+
     async def list_occurrences(
         self, recurring_meeting_id: int, *, filter: str, limit: int | None
     ) -> list[RecurringMeetingOccurrenceRecord]:

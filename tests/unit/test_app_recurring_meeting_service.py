@@ -77,6 +77,7 @@ class _FakeRecurringMeetingApi:
         self.create_calls: list[dict] = []
         self.update_calls: list[tuple[int, dict]] = []
         self.delete_calls: list[int] = []
+        self.end_calls: list[int] = []
         self.list_occurrences_calls: list[tuple[int, str, int | None]] = []
         self.init_occurrence_calls: list[tuple[int, str]] = []
         self.cancel_occurrence_calls: list[tuple[int, str]] = []
@@ -102,6 +103,10 @@ class _FakeRecurringMeetingApi:
 
     async def delete(self, recurring_meeting_id: int) -> None:
         self.delete_calls.append(recurring_meeting_id)
+
+    async def end(self, recurring_meeting_id: int) -> RecurringMeetingRecord:
+        self.end_calls.append(recurring_meeting_id)
+        return self._records[0]
 
     async def list_occurrences(self, recurring_meeting_id: int, *, filter: str, limit: int | None):
         self.list_occurrences_calls.append((recurring_meeting_id, filter, limit))
@@ -254,6 +259,37 @@ async def test_delete_commit_with_confirm_calls_api_delete() -> None:
     result = await _service(api=api).delete(recurring_meeting_id=51, confirm=True)
     assert result.state == "confirmed"
     assert api.delete_calls == [51]
+
+
+# --- end --------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_end_preview_without_confirm_does_not_call_api_end() -> None:
+    api = _FakeRecurringMeetingApi()
+    result = await _service(api=api).end(recurring_meeting_id=51)
+    assert result.state == "preview"
+    assert result.action == "end"
+    assert result.payload == {"id": 51, "title": "Weekly Standup"}
+    assert api.end_calls == []
+
+
+@pytest.mark.asyncio
+async def test_end_commit_with_confirm_calls_api_end() -> None:
+    api = _FakeRecurringMeetingApi()
+    result = await _service(api=api).end(recurring_meeting_id=51, confirm=True)
+    assert result.state == "confirmed"
+    assert result.recurring_meeting_id == 51
+    assert api.end_calls == [51]
+
+
+@pytest.mark.asyncio
+async def test_end_denies_write_when_parent_project_disallowed() -> None:
+    settings = dataclasses.replace(make_settings(), write_projects=("other-project",))
+    api = _FakeRecurringMeetingApi()
+    with pytest.raises(PermissionDeniedError):
+        await _service(api=api, settings=settings).end(recurring_meeting_id=51, confirm=True)
+    assert api.end_calls == []
 
 
 # --- list_occurrences -------------------------------------------------------

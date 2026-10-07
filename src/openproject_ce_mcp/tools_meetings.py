@@ -818,6 +818,25 @@ async def delete_recurring_meeting(
     return await _run_tool(client.recurring_meeting.delete(recurring_meeting_id=safe_id, confirm=confirm))
 
 
+@register_tool
+async def end_recurring_meeting(
+    ctx: Context, recurring_meeting_id: int, confirm: bool = False
+) -> RecurringMeetingWriteResult:
+    """Prepare or end an OpenProject recurring meeting series; only ends it
+    when called again with confirm=true.
+
+    Ending keeps the series and its past occurrences but schedules no
+    further ones, unlike delete_recurring_meeting. OpenProject sets the
+    series' end date to yesterday, so a series whose first occurrence still
+    lies in the future is rejected with a validation error.
+
+    Requires OpenProject 17.8+.
+    """
+    client = _client_from_context(ctx)
+    safe_id = _validate_positive_int(recurring_meeting_id, field_name="recurring_meeting_id")
+    return await _run_tool(client.recurring_meeting.end(recurring_meeting_id=safe_id, confirm=confirm))
+
+
 _VALID_OCCURRENCE_FILTERS: set[str] = {"upcoming", "past", "cancelled", "open"}
 
 

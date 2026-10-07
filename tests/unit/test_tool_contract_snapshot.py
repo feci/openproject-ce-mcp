@@ -1320,6 +1320,23 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "scope": "meeting",
         "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE", "OPENPROJECT_ENABLE_MEETING_READ"),
     },
+    "end_recurring_meeting": {
+        "description_hash": "e37a54aa2555e96afbcdc53fa80e0ec274170db58e8de2e8d0ca9bd515818d25",
+        "input_schema": {
+            "properties": {
+                "recurring_meeting_id": {"title": "Recurring Meeting Id", "type": "integer"},
+                "confirm": {"default": False, "title": "Confirm", "type": "boolean"},
+            },
+            "required": ["recurring_meeting_id"],
+            "title": "end_recurring_meetingArguments",
+            "type": "object",
+            "additionalProperties": False,
+        },
+        "output_schema": None,
+        "classification": "write",
+        "scope": "meeting",
+        "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_WRITE", "OPENPROJECT_ENABLE_MEETING_READ"),
+    },
     "delete_relation": {
         "description_hash": "30c1ec2a0768849345524bf7def212f9b31097bde89fc24ae08f4284c261b78e",
         "input_schema": {

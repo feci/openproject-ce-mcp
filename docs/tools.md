@@ -516,6 +516,7 @@ later still). Meeting Outcomes require 17.6+ throughout.
 | `create_recurring_meeting` | Validate and then create a recurring meeting series in a project; only writes when called again with `confirm=true` (requires OpenProject 17.4+) |
 | `update_recurring_meeting` | Validate and then update a recurring meeting series; only writes when called again with `confirm=true` (requires OpenProject 17.4+) |
 | `delete_recurring_meeting` | Validate and then delete a recurring meeting series; only deletes when called again with `confirm=true` (requires OpenProject 17.4+) |
+| `end_recurring_meeting` | Validate and then end a recurring meeting series, keeping it and its past occurrences; only writes when called again with `confirm=true` (requires OpenProject 17.8+) |
 | `list_recurring_meeting_occurrences` | List a recurring meeting's virtual occurrences by `filter` (`upcoming`/`past`/`cancelled`/`open`); no offset/pagination envelope (requires OpenProject 17.4+) |
 | `init_recurring_meeting_occurrence` | Validate and then materialize a virtual occurrence into a real, standalone meeting (addressed by `start_time`, not an id); only writes when called again with `confirm=true`; result is a full meeting (requires OpenProject 17.4+) |
 | `cancel_recurring_meeting_occurrence` | Validate and then cancel a not-yet-materialized occurrence (addressed by `start_time`); only writes when called again with `confirm=true` (requires OpenProject 17.4+) |

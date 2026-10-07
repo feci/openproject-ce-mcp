@@ -434,6 +434,7 @@ WRITE_TOOLS_BY_SCOPE: dict[str, tuple[str, ...]] = {
         "create_recurring_meeting",
         "update_recurring_meeting",
         "delete_recurring_meeting",
+        "end_recurring_meeting",
         "init_recurring_meeting_occurrence",
         "cancel_recurring_meeting_occurrence",
     ),
