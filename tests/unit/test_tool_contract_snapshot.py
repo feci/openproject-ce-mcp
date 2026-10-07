@@ -6145,7 +6145,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_READ",),
     },
     "list_work_package_available_relation_candidates": {
-        "description_hash": "7a1e4507b5997234e285e6c17ee83ffa458f6e6d593a9f1acc14884ae516340f",
+        "description_hash": "30543004ee503611519bcdaab26281025e8af918e8cef8a1987505f426fc54e1",
         "input_schema": {
             "properties": {
                 "work_package_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "title": "Work Package Id"},

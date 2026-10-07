@@ -46,6 +46,8 @@ RELATION_CANDIDATE_TYPES = {
     "partof",
     "requires",
     "required",
+    "parent",
+    "child",
 }
 
 
@@ -87,10 +89,13 @@ async def list_work_package_available_relation_candidates(
     """List work packages that can be the other end of a new relation.
 
     work_package_id: internal id (e.g., 952) or display_id (e.g., "PROJ-51"), not UI display number.
-    query: text to match against the candidates' subject or id.
+    query: text matching subject, project, type, status or display identifier.
+    Bare digits match the internal id on older/classic-identifier instances,
+    but the project sequence number on 17.8+ with semantic identifiers;
+    use a subject substring for a version-independent search.
     relation_type: only candidates valid for this relation (relates,
     duplicates, duplicated, blocks, blocked, precedes, follows, includes,
-    partof, requires, required) -- OpenProject leaves out e.g. a work package
+    partof, requires, required, parent, child) -- OpenProject leaves out e.g. a work package
     that would create a cycle. Candidates in projects outside
     OPENPROJECT_READ_PROJECTS are left out. limit is capped at
     OPENPROJECT_MAX_PAGE_SIZE (default 50).

@@ -11,9 +11,11 @@ from __future__ import annotations
 import httpx
 import pytest
 from _client_test_helpers import _base_settings, _make_project_response
+from _tools_test_helpers import FakeContext
 
 from openproject_ce_mcp.app.errors import InvalidInputError, ProjectScopeDeniedError
 from openproject_ce_mcp.client import OpenProjectClient
+from openproject_ce_mcp.tools_work_package_pickers import list_work_package_available_relation_candidates
 
 _PRINCIPALS = {
     "_embedded": {
@@ -148,4 +150,33 @@ async def test_relation_candidates_omit_unset_filters() -> None:
     )
     await client.work_package_picker.relation_candidates(42)
     assert "query" not in seen[-1].url.params and "type" not in seen[-1].url.params
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_project_anchor_outside_the_read_allowlist_is_refused_before_listing() -> None:
+    seen: list[httpx.Request] = []
+    client = _client({}, seen, read_projects=("other",))
+    with pytest.raises(ProjectScopeDeniedError):
+        await client.work_package_picker.available_assignees(project_ref="1")
+    assert all("available_assignees" not in r.url.path for r in seen)
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("relation_type", ["parent", "child"])
+async def test_tool_forwards_hierarchy_relation_types(relation_type: str) -> None:
+    seen: list[httpx.Request] = []
+    client = _client(
+        {
+            "/api/v3/work_packages/42": _wp(),
+            "/api/v3/work_packages/42/available_relation_candidates": {"_embedded": {"elements": []}},
+        },
+        seen,
+    )
+    await list_work_package_available_relation_candidates(
+        FakeContext(client), work_package_id=42, relation_type=relation_type
+    )
+    assert seen[-1].url.path == "/api/v3/work_packages/42/available_relation_candidates"
+    assert seen[-1].url.params["type"] == relation_type
     await client.aclose()
