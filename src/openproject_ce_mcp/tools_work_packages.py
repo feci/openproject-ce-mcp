@@ -488,8 +488,9 @@ async def get_work_packages(
     select restricts each result's work_package to the given fields (e.g.
     ["id", "subject", "status"]); an invalid name returns the allowed set.
     The id/success/error fields on each result are always included regardless
-    of select, so you can still tell which items succeeded; listing them in
-    select is accepted and changes nothing.
+    of select, so you can still tell which items succeeded; listing success or
+    error in select is accepted and changes nothing, while id doubles as a
+    selectable work_package field.
 
     For batches with many full-detail items, set text_limit and/or select
     proactively — an unbounded batch of large work packages can exceed the
