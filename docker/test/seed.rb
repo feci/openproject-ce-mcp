@@ -309,17 +309,22 @@ else
   log("project TST already has #{project.documents.count} documents")
 end
 
-# A freshly wiki-module-enabled project has zero wiki pages -- get_wiki_page
-# has no create/list counterpart in this server's API to seed one through, so
-# integration tests need a pre-existing page here.
+# get_wiki_page has no create/list counterpart in this server's API to seed a
+# page through, so integration tests need a pre-existing page here.
+#
+# Up to 17.6 the wiki is a project module and enabling it creates the
+# project's Wiki record; since 17.7 it is no longer a module and a project
+# only gets its Wiki when the first page is created in the UI (the demo
+# seeders create it the same way), so a freshly created project has none.
 #
 # WikiPage#text= takes a raw String on OpenProject 16.6 (a plain `text` column
 # on wiki_pages itself), but a WikiContent instance on 17.x (content moved to
 # a separate, versioned/journaled association). Check for the constant rather
 # than branching on version number, since that's the actual thing that
 # differs.
-if project.wiki && project.wiki.pages.empty?
-  page = WikiPage.create!(wiki: project.wiki, title: "Seed wiki page", author: admin)
+wiki = project.wiki || Wiki.create!(project: project, start_page: "Wiki")
+if wiki.pages.empty?
+  page = WikiPage.create!(wiki: wiki, title: "Seed wiki page", author: admin)
   page.text = if defined?(WikiContent)
     WikiContent.new(text: "Seeded content for integration tests.", author: admin)
   else
@@ -328,7 +333,7 @@ if project.wiki && project.wiki.pages.empty?
   page.save!
   log("created wiki page id=#{page.id} title=#{page.title}")
 else
-  log("project TST already has wiki pages (or no wiki)")
+  log("project TST already has wiki pages")
 end
 
 # get_post has no create/list counterpart in this server's API (see
