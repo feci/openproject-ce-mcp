@@ -13,7 +13,7 @@ from openproject_ce_mcp.client import NotFoundError, OpenProjectClient
 
 pytestmark = pytest.mark.integration
 
-_SUBJECT = "[integration-test] ce-api-gaps"
+_SUBJECT = "[integration-test] container-attachments"
 
 
 async def _new_work_package(client: OpenProjectClient, test_project: str, wp_ids: list[int], suffix: str) -> int:
@@ -30,7 +30,8 @@ async def _delete_attachment_raw(attachment_id: int) -> None:
     # other containers' uploads through the API directly.
     base_url = os.environ["OPENPROJECT_BASE_URL"].rstrip("/")
     async with httpx.AsyncClient(auth=("apikey", os.environ["OPENPROJECT_API_TOKEN"])) as http:
-        await http.delete(f"{base_url}/api/v3/attachments/{attachment_id}")
+        response = await http.delete(f"{base_url}/api/v3/attachments/{attachment_id}")
+        response.raise_for_status()
 
 
 async def _upload_list_cleanup(client: OpenProjectClient, tmp_path, container_type: str, container_id: int) -> None:

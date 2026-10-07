@@ -18,14 +18,15 @@ from `openproject_ce_mcp.tools`, matching `tools_relations.py`'s and
 
 `list_container_attachments`/`create_container_attachment` cover the other
 containers OpenProject attaches files to (wiki pages, forum posts, meetings,
-comments). They are registered with the work-package attachment tools; each
-call then checks the container's own scope flag and project allowlist.
+comments). Listing belongs to the work-package read group; each call also
+checks the container's own scope flag and project allowlist.
 
-`create_work_package_attachment`'s registration gate (`ATTACHMENT_UPLOAD_TOOLS`,
-requiring work-package write scope, a configured `OPENPROJECT_ATTACHMENT_ROOT`,
-AND a usable project read/write allowlist) stays in `tools.py`'s own
-`register_tools()`/`enabled_tool_names()` -- only the function body moved
-here, not the gating metadata.
+Upload registration stays in `tools.py`: `WORK_PACKAGE_UPLOAD_TOOLS` requires
+work-package writes, while `CONTAINER_UPLOAD_TOOLS` requires any of
+`CONTAINER_UPLOAD_WRITE_SCOPES`. Both require `OPENPROJECT_ATTACHMENT_ROOT`
+and usable project read/write allowlists. A container upload also checks its
+own write scope at execution time.
+
 """
 
 from __future__ import annotations
@@ -320,7 +321,7 @@ async def create_container_attachment(
     safe_type = _validate_choice(container_type, field_name="container_type", allowed_values=ATTACHMENT_CONTAINER_TYPES)
     safe_id = _validate_positive_int(container_id, field_name="container_id")
     safe_file_path = _validate_required_text(file_path, field_name="file_path", max_length=4096)
-    safe_description = _validate_optional_text(description, field_name="description", max_length=10_000)
+    safe_description = _validate_optional_text(description, field_name="description", max_length=None)
     return await _run_tool(
         client.attachment.create_for_container(
             container_type=safe_type,

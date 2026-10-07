@@ -438,6 +438,10 @@ it — are refused, so a tool call cannot exfiltrate local secrets.
 any of project, meeting or work-package writes is enabled, with usable project
 scope. `create_work_package_attachment` still requires work-package writes.
 
+`list_container_attachments` belongs to the work-package read group, so
+`OPENPROJECT_ENABLE_WORK_PACKAGE_READ` must be enabled even to list wiki,
+post or meeting attachments.
+
 `list_container_attachments`/`create_container_attachment` check the
 container's own scope flag (project for wiki pages and posts, meeting for
 meetings, work package for comments) and its project against the allowlists.

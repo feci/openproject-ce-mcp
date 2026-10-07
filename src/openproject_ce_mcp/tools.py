@@ -562,7 +562,10 @@ _PROJECT_SCOPED_READ_TOOLS: frozenset[str] = frozenset(
 # Uploads require a configured root and usable project scope. Work-package
 # uploads need work_package write; other containers need any one of project,
 # meeting or work_package write, then check their own scope on each call.
-ATTACHMENT_UPLOAD_TOOLS: tuple[str, ...] = ("create_work_package_attachment", "create_container_attachment")
+WORK_PACKAGE_UPLOAD_TOOLS: tuple[str, ...] = ("create_work_package_attachment",)
+CONTAINER_UPLOAD_TOOLS: tuple[str, ...] = ("create_container_attachment",)
+ATTACHMENT_UPLOAD_TOOLS: tuple[str, ...] = WORK_PACKAGE_UPLOAD_TOOLS + CONTAINER_UPLOAD_TOOLS
+CONTAINER_UPLOAD_WRITE_SCOPES: tuple[str, ...] = ("project", "meeting", "work_package")
 
 # Additional read scopes required by tools whose home group above is not
 # sufficient on its own (verified against each client method, not guessed).
@@ -647,9 +650,9 @@ def enabled_tool_names(settings: Settings) -> tuple[str, ...]:
     # Each call also checks its container's own write scope and project.
     if settings.attachment_root and project_scope_usable:
         if settings.write_enabled("work_package"):
-            include(("create_work_package_attachment",))
-        if any(settings.write_enabled(scope) for scope in ("project", "meeting", "work_package")):
-            include(("create_container_attachment",))
+            include(WORK_PACKAGE_UPLOAD_TOOLS)
+        if any(settings.write_enabled(scope) for scope in CONTAINER_UPLOAD_WRITE_SCOPES):
+            include(CONTAINER_UPLOAD_TOOLS)
 
     return tuple(enabled)
 

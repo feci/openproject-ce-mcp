@@ -39,12 +39,15 @@ Fixture format per tool:
   `READ_TOOLS_BY_SCOPE`/`WRITE_TOOLS_BY_SCOPE`/`PERSONAL_MUTATION_TOOLS`/
   `ATTACHMENT_UPLOAD_TOOLS` -- the same partition `test_tool_groups.py`
   already proves is disjoint and exhaustive.
-- `scope`: the internal scope key (`"project"`, `"work_package"`, `"admin"`,
+- `scope`: for container uploads, the alternative write scopes joined with `|`;
+  otherwise the internal scope key (`"project"`, `"work_package"`, `"admin"`,
   etc.) those same tables use as their join key.
 - `capability_env_vars`: every `OPENPROJECT_ENABLE_*`/`OPENPROJECT_ATTACHMENT_ROOT`
   env var that must be set for this tool to be registered at all (a tuple,
   since `PERSONAL_MUTATION_TOOLS` needs both its read and write flag, and
-  `ATTACHMENT_UPLOAD_TOOLS` additionally needs a configured attachment root).
+  uploads additionally need a configured attachment root). Container uploads
+  list only the root here because no single write flag is required: any one of
+  the paired scopes in `scope` suffices, verified by the registration tests.
 
 To regenerate after an intentional tool-contract change: build a live
 MCPServer via `server.create_app()` under the same maximally-permissive
@@ -120,7 +123,7 @@ def _classify() -> dict[str, tuple[str, str, tuple[str, ...]]]:
             "personal",
             (READ_SCOPE_ENV_VAR["personal"], _WRITE_SCOPE_ENV_VAR["personal"]),
         )
-    for name in tools.ATTACHMENT_UPLOAD_TOOLS:
+    for name in tools.WORK_PACKAGE_UPLOAD_TOOLS:
         classification[name] = (
             "write",
             "work_package",
@@ -130,13 +133,12 @@ def _classify() -> dict[str, tuple[str, str, tuple[str, ...]]]:
                 "OPENPROJECT_ATTACHMENT_ROOT",
             ),
         )
-    # Container uploads need a root and any one paired container scope, not
-    # specifically work_package. The OR-gate is exercised in test_tool_groups.
-    classification["create_container_attachment"] = (
-        "write",
-        "container",
-        ("OPENPROJECT_ATTACHMENT_ROOT",),
-    )
+    for name in tools.CONTAINER_UPLOAD_TOOLS:
+        classification[name] = (
+            "write",
+            "|".join(tools.CONTAINER_UPLOAD_WRITE_SCOPES),
+            ("OPENPROJECT_ATTACHMENT_ROOT",),
+        )
     for name, additional_scopes in tools.ADDITIONAL_READ_SCOPES_BY_TOOL.items():
         kind, scope, env_vars = classification[name]
         additional_env_vars = tuple(READ_SCOPE_ENV_VAR[s] for s in sorted(additional_scopes))
@@ -6171,7 +6173,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         },
         "output_schema": None,
         "classification": "write",
-        "scope": "container",
+        "scope": "project|meeting|work_package",
         "capability_env_vars": ("OPENPROJECT_ATTACHMENT_ROOT",),
     },
 }
