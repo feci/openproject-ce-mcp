@@ -64,23 +64,12 @@ development baseline.
 ### Changed
 
 - **Breaking:** minimum supported Python version raised from 3.10 to 3.11.
-  Enables `asyncio.create_task`'s `context=` parameter, needed to fix a
-  ContextVar leak affecting the `http_requests`/`project_scope`/
-  `policy_decision` structured-log fields for any tool call that fans out
-  through concurrent work (batch work-package reads, search, and relation
-  project-scope checks); also removes the now-dead `tomllib`-availability
-  fallback in the interactive setup and a `datetime.fromisoformat`
-  fractional-seconds compatibility shim.
-- The package version now has a single source of truth (`pyproject.toml`);
-  `__version__` is derived from installed package metadata at runtime instead
-  of being hand-maintained separately. CI verifies wheel/sdist build
-  reproducibility and that a release tag matches the declared version.
-- Unified the preview/confirm write-orchestration state machine across every
-  remaining write-capable domain, removing several hundred lines of
-  duplicated per-domain confirm/commit logic. A confirmed attachment upload
-  now reports the actual file name/size uploaded rather than a stale
-  pre-commit stat if the file changed size between the preview check and the
-  confirmed write.
+  Enables `asyncio.create_task`'s `context=` parameter, which the new
+  structured stderr logging needs to keep the `http_requests`/`project_scope`/
+  `policy_decision` fields correct for tool calls that fan out through
+  concurrent work; also removes the now-dead `tomllib`-availability fallback
+  in the interactive setup and a `datetime.fromisoformat` fractional-seconds
+  compatibility shim.
 - **Breaking:** tool error messages now carry a small, stable set of
   uppercase agent-facing codes (`AUTHENTICATION_FAILED`, `PROJECT_SCOPE_DENIED`,
   `CAPABILITY_DISABLED`, `OPENPROJECT_PERMISSION_DENIED`, `RESOURCE_NOT_FOUND`,
@@ -106,24 +95,6 @@ development baseline.
   a startup/`doctor` deprecation warning or get prefilled by `configure`.
   These names have had no effect on the running server since 0.3.0; use
   `OPENPROJECT_READ_PROJECTS`/`OPENPROJECT_WRITE_PROJECTS`.
-
-### Fixed
-
-- The `http_requests`/`project_scope`/`policy_decision` structured-log
-  fields could silently come back wrong (typically 0/null) for any tool
-  call whose execution fanned out through concurrent work internally (batch
-  work-package reads, search, and per-href relation project-scope checks) --
-  a plain `asyncio.gather` gives each spawned task its own copy of the
-  logging context, so a write made inside it never reached the caller.
-- `create_storage` with `OPENPROJECT_ENABLE_ADMIN_WRITE` unset and an
-  invalid `provider_type` reported `[VALIDATION_FAILED]` instead of
-  `[CAPABILITY_DISABLED]`, even at preview (`confirm=false`) -- the
-  write-enabled check now fires before provider_type validation, matching
-  `update_storage`/`delete_storage` and every other admin-gated write.
-- CI's `upgrade-from-04x` release gate compared versions with a substring
-  match, which would have wrongly passed a release candidate whose version
-  was never bumped once the 0.4.x line reaches a second patch digit (e.g.
-  `0.4.10` contains `0.4.1` as a substring) -- now an exact-token comparison.
 
 ## [0.4.2] - Unreleased
 
