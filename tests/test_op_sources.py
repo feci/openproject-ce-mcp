@@ -77,9 +77,14 @@ def test_require_checkouts_raises_with_every_problem(tmp_path):
         op_sources.require_checkouts({"16.6": "v16.6.10"}, tmp_path)
 
 
-def test_checked_out_tag_reads_the_exact_tag_of_a_git_checkout(tmp_path):
+def test_checked_out_tag_reads_the_exact_tag_of_a_git_checkout(tmp_path, monkeypatch):
     import os
     import subprocess
+
+    # Under a git hook, GIT_DIR and friends point every git call at the hooked
+    # repository instead of tmp_path.
+    for name in [key for key in os.environ if key.startswith("GIT_")]:
+        monkeypatch.delenv(name)
 
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     identity = {

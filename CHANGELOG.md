@@ -113,9 +113,9 @@ development baseline.
 - Fixed the server's scope guidance: Budgets are a Community Edition
   feature, but budget tools are not available.
 - `bulk_create_work_packages`, `bulk_update_work_packages` and `get_work_packages`
-  rejected `index`/`id`, `success` and `error` in `select`, although every item
-  carries them regardless of `select`; naming them is now accepted and changes
-  nothing.
+  rejected the per-item fields `index`, `success` and `error` in `select`,
+  although every item carries them regardless of `select`; naming them is now
+  accepted and leaves the item untouched.
 - `list_time_entry_activities` failed outright on servers that answer the
   `time_entries/activities` probe with HTTP 400 instead of 404; the
   per-project fallback now runs in that case too.
