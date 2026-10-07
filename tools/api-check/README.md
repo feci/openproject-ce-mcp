@@ -72,7 +72,11 @@ different refresh cases:
   `sparse-checkout set` does not move the checked-out commit, only which paths
   are populated from it. Delete the corresponding `op-sources/<version>/`
   directory (in the umbrella directory) and re-run so it re-clones at the new
-  tag.
+  tag. The check scripts enforce this: every pinned version must be checked
+  out at exactly its pinned tag (`op_sources.py` reads the `VERSIONS` list
+  and asks `git describe --tags --exact-match`), otherwise they stop with
+  exit code 2 before auditing anything. Directories under `op-sources/` that
+  are not pinned versions are ignored.
 
 ## What it does and does not catch
 

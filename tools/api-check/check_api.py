@@ -34,27 +34,11 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from op_sources import SOURCES, MissingCheckoutError, pinned_versions, require_checkouts, version_key
+
 ROOT = Path(__file__).resolve().parents[2]
-SOURCES = ROOT.parent / "op-sources"
-
-
-def _version_key(v: str) -> tuple[int, ...]:
-    """Sort/compare key for a version label like "16.6" (16.6 < 17.0 < 17.5)."""
-    try:
-        return tuple(int(part) for part in v.split("."))
-    except ValueError:
-        return (9999,)
-
-
-def _discover_versions() -> list[str]:
-    """All cloned versions under op-sources/, sorted numerically (16.0 < 17.5)."""
-    if not SOURCES.exists():
-        return []
-    versions = [p.name for p in SOURCES.iterdir() if p.is_dir()]
-    return sorted(versions, key=_version_key)
-
-
-VERSIONS = _discover_versions()
+PINS = pinned_versions()
+VERSIONS = list(PINS)
 
 
 @dataclass(frozen=True)
@@ -82,7 +66,7 @@ class Assumption:
         if version in self.expect:
             return self.expect[version]
         if self.present_from is not None:
-            return _version_key(version) >= _version_key(self.present_from)
+            return version_key(version) >= version_key(self.present_from)
         return True
 
 
@@ -627,10 +611,10 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    missing_sources = [v for v in VERSIONS if not (SOURCES / v).exists()]
-    if missing_sources:
-        print(f"error: missing source clones for {missing_sources}.", file=sys.stderr)
-        print("Run: tools/api-check/fetch-sources.sh", file=sys.stderr)
+    try:
+        require_checkouts(PINS, SOURCES)
+    except MissingCheckoutError as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 2
 
     if args.constants:

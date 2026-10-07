@@ -52,8 +52,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, NamedTuple
 
+from op_sources import SOURCES, MissingCheckoutError, pinned_versions, require_checkouts
+
 ROOT = Path(__file__).resolve().parents[2]
-SOURCES = ROOT.parent / "op-sources"
 FIELD_COMPLETENESS_MD = Path(__file__).resolve().parent / "FIELD_COMPLETENESS.md"
 SOURCE_VERSION = "17.9"
 
@@ -598,8 +599,16 @@ def main() -> int:
     parser.add_argument("--verbose", action="store_true", help="also list COVERED/EXCLUDED rows")
     args = parser.parse_args()
 
-    if not (SOURCES / SOURCE_VERSION).exists():
-        print(f"error: missing source clone {SOURCE_VERSION}. Run tools/api-check/fetch-sources.sh", file=sys.stderr)
+    pins = pinned_versions()
+    if SOURCE_VERSION not in pins:
+        print(
+            f"error: SOURCE_VERSION {SOURCE_VERSION} is not pinned in tools/api-check/fetch-sources.sh", file=sys.stderr
+        )
+        return 2
+    try:
+        require_checkouts({SOURCE_VERSION: pins[SOURCE_VERSION]}, SOURCES)
+    except MissingCheckoutError as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 2
 
     try:

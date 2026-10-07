@@ -74,3 +74,23 @@ def test_run_full_coverage_never_probes_module_resources(monkeypatch):
     monkeypatch.setattr(check_api, "_resource_present", _fail_if_called)
 
     assert check_api.run_full_coverage() == 0
+
+
+def test_versions_are_exactly_the_pinned_ones():
+    # Discovering versions from the directories present would let a missing or
+    # stray checkout silently change what gets audited.
+    import op_sources
+
+    assert check_api.PINS == op_sources.pinned_versions()
+
+
+def test_main_fails_when_a_pinned_checkout_is_unusable(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["check_api.py"])
+
+    def unusable(pins, sources):
+        raise check_api.MissingCheckoutError("17.9: missing checkout")
+
+    monkeypatch.setattr(check_api, "require_checkouts", unusable)
+
+    assert check_api.main() == 2
+    assert "17.9: missing checkout" in capsys.readouterr().err

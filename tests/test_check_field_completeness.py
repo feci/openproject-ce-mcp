@@ -6,11 +6,21 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import op_sources
+import pytest
+
 _CHECK_PATH = Path(__file__).resolve().parents[1] / "tools" / "api-check" / "check_field_completeness.py"
 _spec = importlib.util.spec_from_file_location("check_field_completeness", _CHECK_PATH)
 cfc = importlib.util.module_from_spec(_spec)
 sys.modules["check_field_completeness"] = cfc
 _spec.loader.exec_module(cfc)
+
+
+@pytest.fixture(autouse=True)
+def _checkouts_sit_on_their_pinned_tag(monkeypatch):
+    # The tmp_path source trees these tests build are plain directories, not git
+    # checkouts; the tag check is op_sources' concern and has its own tests.
+    monkeypatch.setattr(op_sources, "checked_out_tag", lambda checkout: op_sources.pinned_versions().get(checkout.name))
 
 
 # --- extractor unit tests -----------------------------------------------
@@ -203,7 +213,7 @@ def test_exit_code_two_when_sources_missing(tmp_path, monkeypatch, capsys):
     result = cfc.main()
 
     assert result == 2
-    assert "missing source clone" in capsys.readouterr().err
+    assert "missing checkout" in capsys.readouterr().err
     assert not write_target.exists()
 
 
