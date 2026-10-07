@@ -1508,3 +1508,40 @@ async def test_bulk_create_work_packages_tool_rejects_both_parent_aliases() -> N
             items=[{"project": "demo", "type": "Task", "subject": "X", "parent": "7", "parent_work_package_id": "7"}],
             confirm=True,
         )
+
+
+@pytest.mark.asyncio
+async def test_update_work_package_accepts_a_description_longer_than_the_retired_cap() -> None:
+    class StubClient:
+        @property
+        def work_package(self):
+            return self
+
+        async def update(self, **kwargs):
+            return kwargs
+
+    long_description = "x" * 40_000
+    result = await update_work_package(
+        FakeContext(StubClient()),  # type: ignore[arg-type]
+        42,
+        description=long_description,
+        custom_fields={"Notes": long_description},
+        confirm=True,
+    )
+    assert result["description"] == long_description
+    assert result["custom_fields"] == {"Notes": long_description}
+
+
+@pytest.mark.asyncio
+async def test_add_work_package_comment_accepts_a_comment_longer_than_the_retired_cap() -> None:
+    class StubClient:
+        @property
+        def work_package(self):
+            return self
+
+        async def add_comment(self, **kwargs):
+            return kwargs
+
+    long_comment = "z" * 40_000
+    result = await add_work_package_comment(FakeContext(StubClient()), 42, long_comment, confirm=True)  # type: ignore[arg-type]
+    assert result["comment"] == long_comment

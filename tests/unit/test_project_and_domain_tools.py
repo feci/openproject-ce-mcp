@@ -1286,3 +1286,22 @@ async def test_list_notifications_returns_normalized_results() -> None:
     assert result.results[0].project_name == "Demo"
 
     await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_create_project_accepts_a_description_longer_than_the_retired_cap() -> None:
+    class StubClient:
+        async def create_project(self, **kwargs):
+            return kwargs
+
+    long_description = "x" * 40_000
+    result = await create_project(
+        FakeContext(StubClient()),  # type: ignore[arg-type]
+        name="Demo",
+        identifier="demo",
+        description=long_description,
+        status_explanation=long_description,
+        confirm=True,
+    )
+    assert result["description"] == long_description
+    assert result["status_explanation"] == long_description

@@ -113,18 +113,25 @@ def _require_at_least_one(*values: Any, message: str) -> None:
         raise ValueError(message)
 
 
-def _validate_optional_text(value: str | None, *, field_name: str, max_length: int) -> str | None:
+def _check_text_length(normalized: str, *, field_name: str, max_length: int | None) -> None:
+    """``max_length=None`` is for fields OpenProject itself stores unbounded
+    (descriptions, comments): a cap there would mirror no real constraint and
+    only invite a caller to shorten text to get it accepted."""
+    if max_length is not None and len(normalized) > max_length:
+        raise ValueError(f"{field_name} must be at most {max_length} characters.")
+
+
+def _validate_optional_text(value: str | None, *, field_name: str, max_length: int | None) -> str | None:
     if value is None:
         return None
     normalized = value.strip()
     if not normalized:
         return None
-    if len(normalized) > max_length:
-        raise ValueError(f"{field_name} must be at most {max_length} characters.")
+    _check_text_length(normalized, field_name=field_name, max_length=max_length)
     return normalized
 
 
-def _validate_optional_update_text(value: str | None, *, field_name: str, max_length: int) -> str | None:
+def _validate_optional_update_text(value: str | None, *, field_name: str, max_length: int | None) -> str | None:
     """Like _validate_optional_text, but preserves an explicit empty string.
 
     None still means "not provided, leave unchanged"; an explicit "" means
@@ -136,12 +143,11 @@ def _validate_optional_update_text(value: str | None, *, field_name: str, max_le
     if value is None:
         return None
     normalized = value.strip()
-    if len(normalized) > max_length:
-        raise ValueError(f"{field_name} must be at most {max_length} characters.")
+    _check_text_length(normalized, field_name=field_name, max_length=max_length)
     return normalized
 
 
-def _validate_required_text(value: str, *, field_name: str, max_length: int) -> str:
+def _validate_required_text(value: str, *, field_name: str, max_length: int | None) -> str:
     normalized = _validate_optional_text(value, field_name=field_name, max_length=max_length)
     if not normalized:
         raise ValueError(f"{field_name} is required.")
@@ -170,8 +176,6 @@ def _validate_custom_field_value(value: Any) -> Any:
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, str):
-        if len(value) > 10_000:
-            raise ValueError("custom_fields string values must be at most 10000 characters.")
         return value.strip()
     if isinstance(value, list):
         return [_validate_custom_field_value(item) for item in value]
@@ -517,12 +521,17 @@ def _validate_json_object(value: dict[str, Any], *, field_name: str) -> dict[str
     return normalized
 
 
+# Strings inside board query JSON (filters) are structured query data, not
+# free text -- a fixed cap, unlike the unbounded long-text fields.
+BOARD_JSON_STRING_MAX = 10_000
+
+
 def _validate_json_value(value: Any, *, field_name: str) -> Any:
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, str):
-        if len(value) > 10_000:
-            raise ValueError(f"{field_name} string values must be at most 10000 characters.")
+        if len(value) > BOARD_JSON_STRING_MAX:
+            raise ValueError(f"{field_name} string values must be at most {BOARD_JSON_STRING_MAX} characters.")
         return value
     if isinstance(value, list):
         if len(value) > 100:

@@ -547,7 +547,7 @@ def _validate_work_package_create_fields(
     create has nothing to clear, every field is a plain optional value.
     """
     return {
-        "description": _validate_optional_text(description, field_name=f"{field_prefix}description", max_length=10_000),
+        "description": _validate_optional_text(description, field_name=f"{field_prefix}description", max_length=None),
         "version": _validate_optional_query(version, field_name=f"{field_prefix}version", max_length=100),
         "target_versions": _validate_optional_target_versions(
             target_versions, field_name=f"{field_prefix}target_versions"
@@ -689,7 +689,7 @@ def _validate_work_package_update_fields(
     return {
         "subject": _validate_optional_query(subject, field_name=f"{field_prefix}subject", max_length=255),
         "description": _validate_optional_update_text(
-            description, field_name=f"{field_prefix}description", max_length=10_000
+            description, field_name=f"{field_prefix}description", max_length=None
         ),
         "type": _validate_optional_query(type, field_name=f"{field_prefix}type", max_length=100),
         "version": _validate_optional_version(version, field_name=f"{field_prefix}version", sentinel=CLEAR_VERSION),
@@ -1248,7 +1248,7 @@ async def add_work_package_comment(
     """
     client = _client_from_context(ctx)
     safe_id = _validate_work_package_ref(work_package_id)
-    safe_comment = _validate_required_text(comment, field_name="comment", max_length=10_000)
+    safe_comment = _validate_required_text(comment, field_name="comment", max_length=None)
     return await _run_tool(
         client.work_package.add_comment(
             work_package_id=safe_id,

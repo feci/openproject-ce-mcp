@@ -11,6 +11,9 @@ development baseline.
 
 ### Fixed
 
+- The MCP server no longer imposes a 10,000-character limit on long-text
+  writes (descriptions, comments, custom field strings), so work packages
+  whose description grew longer in the web editor can be edited again.
 - Fixed the server's scope guidance: Budgets are a Community Edition
   feature, but budget tools are not available.
 
