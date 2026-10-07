@@ -2081,6 +2081,19 @@ class GitlabMergeRequestListResult(CollectionResult):
 
 
 @dataclass
+class ContainerAttachmentWriteResult(ConfirmationHeader):
+    """Upload result for an attachment on a container other than a work
+    package (wiki page, forum post, meeting, comment)."""
+
+    attachment_id: int | None
+    container_type: str
+    container_id: int
+    payload: dict[str, Any]
+    validation_errors: dict[str, str]
+    result: AttachmentSummary | None
+
+
+@dataclass
 class PrincipalCollectionResult(CollectionResult):
     """Principals OpenProject offers for one slot (assignee, watcher, ...) --
     an unpaginated collection, unlike list_principals' search."""

@@ -8,12 +8,14 @@ rather than silently shrink it.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCES = ROOT.parent / "op-sources"
+# Same variable fetch-sources.sh honours, so both always agree on the location.
+SOURCES = Path(os.environ.get("OPENPROJECT_SOURCES_DIR") or ROOT.parent / "op-sources")
 FETCH_SCRIPT = Path(__file__).resolve().parent / "fetch-sources.sh"
 
 _PIN = re.compile(r'^\s*"(?P<version>\d+\.\d+):(?P<tag>v[^"]+)"\s*$')

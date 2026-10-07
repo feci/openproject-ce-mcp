@@ -227,3 +227,118 @@ def test_coverage_body_includes_matrix_and_gaps_section():
     assert "gizmo" in body
     assert "## Genuine CE gaps" in body
     assert "no live probe" in body
+
+
+# --- live probe ---------------------------------------------------------------
+
+
+class _FakeResponse:
+    def __init__(self, status: int) -> None:
+        self.status = status
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc) -> None:
+        return None
+
+
+def _fake_urlopen(statuses: dict[str, object]):
+    import urllib.error
+
+    def urlopen(request, timeout):
+        resource = request.full_url.rsplit("/", 1)[-1]
+        outcome = statuses[resource]
+        if isinstance(outcome, int) and outcome >= 400:
+            raise urllib.error.HTTPError(request.full_url, outcome, "error", {}, None)
+        if outcome == "unreachable":
+            raise urllib.error.URLError("connection refused")
+        return _FakeResponse(outcome)
+
+    return urlopen
+
+
+def test_live_probe_classifies_unused_resources_by_their_status(monkeypatch):
+    monkeypatch.setenv("OPENPROJECT_BASE_URL", "https://op.example.com/")
+    monkeypatch.setenv("OPENPROJECT_API_TOKEN", "token")
+    monkeypatch.setattr(
+        check_coverage.urllib.request,
+        "urlopen",
+        _fake_urlopen({"widgets": 200, "portfolios_x": 403, "nested_x": 404, "flaky_x": "unreachable"}),
+    )
+    monkeypatch.setattr(check_coverage, "_source_resources", lambda: ["flaky_x", "nested_x", "portfolios_x", "widgets"])
+    monkeypatch.setattr(check_coverage, "_client_resources", lambda: set())
+
+    rows, tally = check_coverage.build_matrix()
+
+    assert {r: (status, cls) for r, _, status, cls in rows} == {
+        "widgets": (200, "GAP (CE)"),
+        "portfolios_x": (403, "enterprise"),
+        "nested_x": (404, "subresource?"),
+        "flaky_x": (None, "subresource?"),
+    }
+    assert tally == {"GAP (CE)": 1, "enterprise": 1, "subresource?": 2}
+
+
+def test_live_probe_is_skipped_without_credentials(monkeypatch):
+    monkeypatch.delenv("OPENPROJECT_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENPROJECT_API_TOKEN", raising=False)
+
+    def no_network(*args, **kwargs):
+        raise AssertionError("the probe must not touch the network without credentials")
+
+    monkeypatch.setattr(check_coverage.urllib.request, "urlopen", no_network)
+
+    assert check_coverage._live_probe(["work_packages"]) == {}
+
+
+# --- source inventory and main ---------------------------------------------------
+
+
+def test_source_resources_include_core_and_module_api_directories(tmp_path, monkeypatch):
+    monkeypatch.setattr(check_coverage, "SOURCES", tmp_path)
+    base = tmp_path / check_coverage.SOURCE_VERSION
+    (base / "lib" / "api" / "v3" / "work_packages").mkdir(parents=True)
+    (base / "modules" / "meeting" / "lib" / "api" / "v3" / "meetings").mkdir(parents=True)
+    (base / "modules" / "costs" / "app").mkdir(parents=True)
+
+    assert check_coverage._source_resources() == ["meetings", "work_packages"]
+
+
+def _main(monkeypatch, tmp_path, argv: list[str], *, checkout_ok: bool = True) -> int:
+    monkeypatch.setattr(check_coverage, "ROOT", tmp_path)
+    monkeypatch.setattr(check_coverage, "COVERAGE_MD", tmp_path / "COVERAGE.md")
+    monkeypatch.setattr(check_coverage, "_source_resources", lambda: ["work_packages", "widgets"])
+    monkeypatch.setattr(check_coverage, "_client_resources", lambda: {"work_packages"})
+    monkeypatch.setattr(check_coverage, "_live_probe", lambda resources: {})
+
+    def require_checkouts(pins, sources):
+        if not checkout_ok:
+            raise check_coverage.MissingCheckoutError("17.9: missing checkout")
+
+    monkeypatch.setattr(check_coverage, "require_checkouts", require_checkouts)
+    monkeypatch.setattr(sys, "argv", ["check_coverage.py", *argv])
+    return check_coverage.main()
+
+
+def test_main_writes_the_report_only_when_asked(tmp_path, monkeypatch, capsys):
+    assert _main(monkeypatch, tmp_path, []) == 0
+    assert not (tmp_path / "COVERAGE.md").exists()
+
+    assert _main(monkeypatch, tmp_path, ["--write"]) == 0
+    report = (tmp_path / "COVERAGE.md").read_text()
+    assert "work_packages" in report
+    assert "widgets" in report
+    assert "wrote COVERAGE.md" in capsys.readouterr().out
+
+
+def test_main_refuses_to_run_without_the_pinned_checkout(tmp_path, monkeypatch, capsys):
+    assert _main(monkeypatch, tmp_path, ["--write"], checkout_ok=False) == 2
+    assert "17.9: missing checkout" in capsys.readouterr().err
+    assert not (tmp_path / "COVERAGE.md").exists()
+
+
+def test_main_refuses_a_source_version_that_is_not_pinned(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(check_coverage, "SOURCE_VERSION", "99.9")
+    assert _main(monkeypatch, tmp_path, []) == 2
+    assert "SOURCE_VERSION 99.9 is not pinned" in capsys.readouterr().err

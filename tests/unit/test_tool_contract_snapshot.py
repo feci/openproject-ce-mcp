@@ -39,12 +39,15 @@ Fixture format per tool:
   `READ_TOOLS_BY_SCOPE`/`WRITE_TOOLS_BY_SCOPE`/`PERSONAL_MUTATION_TOOLS`/
   `ATTACHMENT_UPLOAD_TOOLS` -- the same partition `test_tool_groups.py`
   already proves is disjoint and exhaustive.
-- `scope`: the internal scope key (`"project"`, `"work_package"`, `"admin"`,
+- `scope`: for container uploads, the alternative write scopes joined with `|`;
+  otherwise the internal scope key (`"project"`, `"work_package"`, `"admin"`,
   etc.) those same tables use as their join key.
 - `capability_env_vars`: every `OPENPROJECT_ENABLE_*`/`OPENPROJECT_ATTACHMENT_ROOT`
   env var that must be set for this tool to be registered at all (a tuple,
   since `PERSONAL_MUTATION_TOOLS` needs both its read and write flag, and
-  `ATTACHMENT_UPLOAD_TOOLS` additionally needs a configured attachment root).
+  uploads additionally need a configured attachment root). Container uploads
+  list only the root here because no single write flag is required: any one of
+  the paired scopes in `scope` suffices, verified by the registration tests.
 
 To regenerate after an intentional tool-contract change: build a live
 MCPServer via `server.create_app()` under the same maximally-permissive
@@ -120,7 +123,7 @@ def _classify() -> dict[str, tuple[str, str, tuple[str, ...]]]:
             "personal",
             (READ_SCOPE_ENV_VAR["personal"], _WRITE_SCOPE_ENV_VAR["personal"]),
         )
-    for name in tools.ATTACHMENT_UPLOAD_TOOLS:
+    for name in tools.WORK_PACKAGE_UPLOAD_TOOLS:
         classification[name] = (
             "write",
             "work_package",
@@ -129,6 +132,12 @@ def _classify() -> dict[str, tuple[str, str, tuple[str, ...]]]:
                 _WRITE_SCOPE_PAIRED_READ_ENV_VAR["work_package"],
                 "OPENPROJECT_ATTACHMENT_ROOT",
             ),
+        )
+    for name in tools.CONTAINER_UPLOAD_TOOLS:
+        classification[name] = (
+            "write",
+            "|".join(tools.CONTAINER_UPLOAD_WRITE_SCOPES),
+            ("OPENPROJECT_ATTACHMENT_ROOT",),
         )
     for name, additional_scopes in tools.ADDITIONAL_READ_SCOPES_BY_TOOL.items():
         kind, scope, env_vars = classification[name]
@@ -6119,23 +6128,22 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "scope": "work_package",
         "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
-    "list_available_assignees": {
-        "description_hash": "9e1b6eab64c6fe00e7df6c93ec7d635edebaebab453625572696408dd4a8f632",
+    "list_container_attachments": {
+        "description_hash": "ca63734596cd2e71c9b787725d190640423306362125f3c02e74ec3c7dad157d",
         "input_schema": {
             "properties": {
-                "work_package_id": {
-                    "anyOf": [{"type": "integer"}, {"type": "string"}, {"type": "null"}],
-                    "default": None,
-                    "title": "Work Package Id",
-                },
-                "project": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None, "title": "Project"},
+                "container_type": {"title": "Container Type", "type": "string"},
+                "container_id": {"title": "Container Id", "type": "integer"},
+                "offset": {"default": 1, "title": "Offset", "type": "integer"},
+                "limit": {"anyOf": [{"type": "integer"}, {"type": "null"}], "default": None, "title": "Limit"},
                 "select": {
                     "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
                     "default": None,
                     "title": "Select",
                 },
             },
-            "title": "list_available_assigneesArguments",
+            "required": ["container_type", "container_id"],
+            "title": "list_container_attachmentsArguments",
             "type": "object",
             "additionalProperties": False,
         },
@@ -6171,6 +6179,55 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "classification": "read",
         "scope": "work_package",
         "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_READ",),
+    },
+    "list_available_assignees": {
+        "description_hash": "9e1b6eab64c6fe00e7df6c93ec7d635edebaebab453625572696408dd4a8f632",
+        "input_schema": {
+            "properties": {
+                "work_package_id": {
+                    "anyOf": [{"type": "integer"}, {"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "title": "Work Package Id",
+                },
+                "project": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None, "title": "Project"},
+                "select": {
+                    "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
+                    "default": None,
+                    "title": "Select",
+                },
+            },
+            "title": "list_available_assigneesArguments",
+            "type": "object",
+            "additionalProperties": False,
+        },
+        "output_schema": None,
+        "classification": "read",
+        "scope": "work_package",
+        "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_READ",),
+    },
+    "create_container_attachment": {
+        "description_hash": "49e26c0cb5bfecb5fdfc895203e2345442315d9d9e218f6428116860263b0564",
+        "input_schema": {
+            "properties": {
+                "container_type": {"title": "Container Type", "type": "string"},
+                "container_id": {"title": "Container Id", "type": "integer"},
+                "file_path": {"title": "File Path", "type": "string"},
+                "description": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "title": "Description",
+                },
+                "confirm": {"default": False, "title": "Confirm", "type": "boolean"},
+            },
+            "required": ["container_type", "container_id", "file_path"],
+            "title": "create_container_attachmentArguments",
+            "type": "object",
+            "additionalProperties": False,
+        },
+        "output_schema": None,
+        "classification": "write",
+        "scope": "project|meeting|work_package",
+        "capability_env_vars": ("OPENPROJECT_ATTACHMENT_ROOT",),
     },
 }
 
