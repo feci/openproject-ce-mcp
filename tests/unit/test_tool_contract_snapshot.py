@@ -211,7 +211,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "bulk_create_work_packages": {
-        "description_hash": "8d50a3e3be2da65d6f694d5d2f57070b6865ef689065ec0c56562540847ac012",
+        "description_hash": "a7e2989cc5c3e1ea15f91baca4e506cf47028caac75f186ae87514c6106341de",
         "input_schema": {
             "properties": {
                 "items": {"items": {"additionalProperties": True, "type": "object"}, "title": "Items", "type": "array"},
@@ -3917,7 +3917,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_READ",),
     },
     "get_work_packages": {
-        "description_hash": "ef5f0065db03a06efcf6ebd36a7aab72e17c78765cba761e9482efd67b7125c9",
+        "description_hash": "3d58cdc94bf777092d9ec25ba5bc59eb016c0cb8ce81ed2a0bb6208640120f0b",
         "input_schema": {
             "properties": {
                 "ids": {"items": {"anyOf": [{"type": "integer"}, {"type": "string"}]}, "title": "Ids", "type": "array"},

@@ -934,3 +934,25 @@ def test_board_query_json_strings_keep_a_fixed_cap() -> None:
     assert _validate_optional_filter_list([{"status": at_cap}]) == [{"status": at_cap}]
     with pytest.raises(ValueError, match=r"filters string values must be at most 10000 characters\.$"):
         _validate_optional_filter_list([{"status": at_cap + "x"}])
+
+
+def test_select_wrapper_field_constants_match_the_item_models() -> None:
+    from dataclasses import fields
+
+    from openproject_ce_mcp.models import BatchWorkPackageReadItemResult, BulkWorkPackageItemResult
+    from openproject_ce_mcp.tools_validation import BATCH_READ_ITEM_WRAPPER_FIELDS, BULK_ITEM_WRAPPER_FIELDS
+
+    assert BULK_ITEM_WRAPPER_FIELDS == {f.name for f in fields(BulkWorkPackageItemResult)} - {"result"}
+    assert BATCH_READ_ITEM_WRAPPER_FIELDS == {f.name for f in fields(BatchWorkPackageReadItemResult)} - {"work_package"}
+
+
+def test_validate_select_accepts_wrapper_fields_without_returning_them() -> None:
+    from openproject_ce_mcp.models import WorkPackageWriteResult
+    from openproject_ce_mcp.tools_validation import BULK_ITEM_WRAPPER_FIELDS, _validate_select
+
+    assert _validate_select(
+        ["index", "ready", "success"], row_type=WorkPackageWriteResult, wrapper_fields=BULK_ITEM_WRAPPER_FIELDS
+    ) == ["ready"]
+    assert _validate_select(["index"], row_type=WorkPackageWriteResult, wrapper_fields=BULK_ITEM_WRAPPER_FIELDS) == []
+    with pytest.raises(ValueError, match="not a valid WorkPackageWriteResult field"):
+        _validate_select(["index"], row_type=WorkPackageWriteResult)

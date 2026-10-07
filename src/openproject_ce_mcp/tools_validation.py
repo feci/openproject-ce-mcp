@@ -908,11 +908,22 @@ def _clearable_duration(value: str | None, *, field_name: str, sentinel: object)
     return _clearable(value, lambda v: _validate_optional_duration(v, field_name=field_name), sentinel=sentinel)
 
 
-def _validate_select(select: list[str] | None, *, row_type: type) -> list[str] | None:
+# Per-item wrapper fields of the batch/bulk tools. The presentation layer emits
+# them on every item regardless of ``select`` (a caller needs them to correlate
+# results), so naming them in ``select`` is accepted as a no-op rather than
+# rejected as an unknown entity field.
+BULK_ITEM_WRAPPER_FIELDS = frozenset({"index", "success", "error"})
+BATCH_READ_ITEM_WRAPPER_FIELDS = frozenset({"id", "success", "error"})
+
+
+def _validate_select(
+    select: list[str] | None, *, row_type: type, wrapper_fields: frozenset[str] = frozenset()
+) -> list[str] | None:
     """Validate a field-selection list against a result-row dataclass.
 
     Called in the tool body so invalid field names raise [VALIDATION_FAILED] before
-    the client call. Returns the cleaned list (or None). The trimming wrapper
+    the client call. Returns the cleaned list of entity fields (or None); names in
+    ``wrapper_fields`` are accepted but not returned. The trimming wrapper
     (tools_runtime._normalize_select) reads the same ``select`` kwarg and applies
     it after the result resolves.
     """
@@ -920,13 +931,17 @@ def _validate_select(select: list[str] | None, *, row_type: type) -> list[str] |
         return None
     valid = {f.name for f in dataclass_fields(row_type)}
     chosen: list[str] = []
+    wrapper_only = False
     for raw in select:
         name = str(raw).strip()
-        if name not in valid:
-            allowed = ", ".join(sorted(valid))
+        if name in valid:
+            if name not in chosen:
+                chosen.append(name)
+        elif name in wrapper_fields:
+            wrapper_only = True
+        else:
+            allowed = ", ".join(sorted(valid | wrapper_fields))
             raise ValueError(f"select field '{name}' is not a valid {row_type.__name__} field. Allowed: {allowed}.")
-        if name not in chosen:
-            chosen.append(name)
-    if not chosen:
+    if not chosen and not wrapper_only:
         raise ValueError("select must contain at least one field name.")
     return chosen

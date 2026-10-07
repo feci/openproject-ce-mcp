@@ -5,7 +5,7 @@ client's runtime behaviour across identifier modes — the behaviour the offline
 `tools/api-check/` symbol check cannot prove.
 
 We run every supported minor's latest patch (all-in-one images, each bundles
-PostgreSQL + memcached) — 16.0 through 17.8 as of this pin (16 versions total).
+PostgreSQL + memcached) — 16.0 through 17.9 as of this pin (17 versions total).
 The version-specific API behavior that actually matters to this client:
 
 | minor range | why it matters |
@@ -15,6 +15,7 @@ The version-specific API behavior that actually matters to this client:
 | 17.0–17.3   | workspaces (17.0); storages' `forbiddenFileNameCharacters` field (17.1); sprints/meetings/user-schedule domains (17.3) |
 | 17.4        | displayId field introduced, semantic identifiers still off |
 | 17.5–17.8   | project-based semantic identifiers active + workspaces (favorites); 17.7 makes user working-times generally available (no longer feature-flag-gated) |
+| 17.9        | `observedInVersions` on work packages (multi-value, closed versions allowed, default for type Bug); `GET /api/v3/meetings` filters by title; date alerts available in Community Edition |
 
 `targetVersions` (multi-value successor to `version`) and
 `Setting::WorkPackageMultipleVersions` (which gates whether more than one
@@ -32,7 +33,7 @@ reached the requested state after writing it (not just that the write call
 succeeded) and skips the multi-version fixture with a clear warning if not,
 rather than seeding data the server would reject.
 
-The `openproject/openproject:17.8.0` image ships
+The `openproject/openproject` 17.8+ images (verified on 17.8.1 and 17.9.1) ship
 `Setting::WorkPackageMultipleVersions` with `default: true`
 (`config/constants/settings/definition.rb`) there, not off by default as
 might be assumed. `seed.rb` always forces it to a known state (`false` unless
@@ -49,7 +50,7 @@ list here, since they're the actual source of truth and this table would drift.
 ## Usage
 
 ```bash
-docker/test/up.sh           # every version (16.0-17.8), in batches of 5
+docker/test/up.sh           # every version (16.0-17.9), in batches of 5
 docker/test/up.sh all 3     # every version, 3 concurrent instances per batch
 docker/test/up.sh 17        # only 17.5.x
 docker/test/up.sh 174       # only 17.4.x
@@ -57,6 +58,7 @@ docker/test/up.sh 16        # only 16.6.x
 docker/test/up.sh 176       # only 17.6.x
 docker/test/up.sh 177       # only 17.7.x
 docker/test/up.sh 178       # only 17.8.x
+docker/test/up.sh 179       # only 17.9.x
 SEED_MULTI_VERSIONS=1 docker/test/up.sh 178
                              # only 17.8.x with Setting::WorkPackageMultipleVersions forced on
 # ... and 160-165/170-173 for every other pinned minor -- see up.sh's own
@@ -73,7 +75,7 @@ docker/test/down.sh --purge # also drop volumes
 ```
 
 "all" mode brings instances up in sequential BATCHES (default 5 concurrent),
-not all 16 at once — that would exhaust a small Docker VM's memory. Each batch
+not all 17 at once — that would exhaust a small Docker VM's memory. Each batch
 is brought up, waited on, seeded, printed, and torn down (volumes kept)
 before the next starts.
 

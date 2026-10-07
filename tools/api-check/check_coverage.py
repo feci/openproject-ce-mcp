@@ -34,12 +34,13 @@ import urllib.request
 from base64 import b64encode
 from pathlib import Path
 
+from op_sources import SOURCES, MissingCheckoutError, pinned_versions, require_checkouts
+
 ROOT = Path(__file__).resolve().parents[2]
-SOURCES = ROOT.parent / "op-sources"
 CLIENT = ROOT / "src" / "openproject_ce_mcp" / "client.py"
 ADAPTERS_DIR = ROOT / "src" / "openproject_ce_mcp" / "app" / "adapters"
 COVERAGE_MD = Path(__file__).resolve().parent / "COVERAGE.md"
-SOURCE_VERSION = "17.7"  # inventory reference
+SOURCE_VERSION = "17.9"  # inventory reference
 
 # Resources the client reaches under a different path segment than the
 # source directory name. Without this, check_coverage.py under-reports: the
@@ -350,8 +351,16 @@ def main() -> int:
     parser.add_argument("--write", action="store_true", help="(re)write tools/api-check/COVERAGE.md")
     args = parser.parse_args()
 
-    if not (SOURCES / SOURCE_VERSION).exists():
-        print(f"error: missing source clone {SOURCE_VERSION}. Run tools/api-check/fetch-sources.sh", file=sys.stderr)
+    pins = pinned_versions()
+    if SOURCE_VERSION not in pins:
+        print(
+            f"error: SOURCE_VERSION {SOURCE_VERSION} is not pinned in tools/api-check/fetch-sources.sh", file=sys.stderr
+        )
+        return 2
+    try:
+        require_checkouts({SOURCE_VERSION: pins[SOURCE_VERSION]}, SOURCES)
+    except MissingCheckoutError as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 2
 
     live_enabled = bool(os.environ.get("OPENPROJECT_BASE_URL") and os.environ.get("OPENPROJECT_API_TOKEN"))

@@ -48,6 +48,8 @@ from .models import (
 )
 from .tools_runtime import _client_from_context, _run_tool, register_tool
 from .tools_validation import (
+    BATCH_READ_ITEM_WRAPPER_FIELDS,
+    BULK_ITEM_WRAPPER_FIELDS,
     _clearable,
     _clearable_duration,
     _clearable_ref,
@@ -487,7 +489,8 @@ async def get_work_packages(
     select restricts each result's work_package to the given fields (e.g.
     ["id", "subject", "status"]); an invalid name returns the allowed set.
     The id/success/error fields on each result are always included regardless
-    of select, so you can still tell which items succeeded.
+    of select, so you can still tell which items succeeded; listing them in
+    select is accepted and changes nothing.
 
     For batches with many full-detail items, set text_limit and/or select
     proactively — an unbounded batch of large work packages can exceed the
@@ -520,7 +523,7 @@ async def get_work_packages(
         raise ValueError(f"Maximum {BATCH_READ_MAX_IDS} unique work packages per batch (got {len(unique_ids)})")
 
     safe_text_limit = _validate_optional_text_limit(text_limit)
-    _validate_select(select, row_type=WorkPackageDetail)
+    _validate_select(select, row_type=WorkPackageDetail, wrapper_fields=BATCH_READ_ITEM_WRAPPER_FIELDS)
 
     return await _run_tool(client.work_package.get_batch(ids=unique_ids, text_limit=safe_text_limit))
 
@@ -916,7 +919,8 @@ async def bulk_create_work_packages(
     select restricts each item's nested result to the given fields (e.g.
     ["ready", "work_package_id"]); an invalid name returns the allowed set. The
     index/success/error fields on each item are always included regardless of
-    select, so you can still tell which items succeeded. For batches with many
+    select, so you can still tell which items succeeded; listing them in select
+    is accepted and changes nothing. For batches with many
     items or long descriptions, set select proactively — an unconfirmed preview
     echoes each item's full proposed payload, and an unbounded batch can exceed
     the tool-result size limit and get redirected to a file.
@@ -937,7 +941,7 @@ async def bulk_create_work_packages(
     client = _client_from_context(ctx)
     if not items:
         raise ValueError("items must not be empty.")
-    _validate_select(select, row_type=WorkPackageWriteResult)
+    _validate_select(select, row_type=WorkPackageWriteResult, wrapper_fields=BULK_ITEM_WRAPPER_FIELDS)
     safe_items: list[dict[str, Any]] = []
     for i, item in enumerate(items):
         if not isinstance(item, dict):
@@ -1067,7 +1071,7 @@ async def bulk_update_work_packages(
     client = _client_from_context(ctx)
     if not items:
         raise ValueError("items must not be empty.")
-    _validate_select(select, row_type=WorkPackageWriteResult)
+    _validate_select(select, row_type=WorkPackageWriteResult, wrapper_fields=BULK_ITEM_WRAPPER_FIELDS)
     safe_items: list[dict[str, Any]] = []
     for i, item in enumerate(items):
         if not isinstance(item, dict):

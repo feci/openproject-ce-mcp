@@ -1,5 +1,5 @@
 # Local OpenProject instances for runtime verification of the MCP client
-# across the full supported minor-version range (16.0-17.8). We run the
+# across the full supported minor-version range (16.0-17.9). We run the
 # LATEST patch of every minor (what users actually run), using the all-in-one
 # images (NOT -slim, which have no bundled database and crash on boot).
 #
@@ -27,7 +27,7 @@
 #           17.7 the setting's own .active? additionally requires an
 #           experimental OpenProject::FeatureDecisions flag this project does
 #           not enable -- see 17.8's entry below and seed.rb's own comment.
-#   17.8.0  latest release as of this pin. Drops 17.7's extra
+#   17.8.1  Drops 17.7's extra
 #           FeatureDecisions gate on Setting::WorkPackageMultipleVersions --
 #           setting the plain Setting alone is now sufficient to enable
 #           multi-value target_versions writes. Reading targetVersions has no
@@ -46,6 +46,11 @@
 #           setting-enabled multi-value write path on the SAME container/
 #           volume -- no separate dedicated container needed, since a fresh
 #           17.8 instance already defaults to the enabled state.
+#   17.9.1  latest release as of this pin. New work package attribute
+#           observedInVersions (multi-value, closed versions allowed, on by
+#           default for type Bug); GET /api/v3/meetings gains a title filter
+#           (case-insensitive partial, matches a recurring series' title);
+#           date alerts are now Community Edition (notification details).
 #
 # Driven by up.sh / down.sh. SECRET_KEY_BASE comes from a generated .env
 # (gitignored); never hardcode it here.
@@ -337,7 +342,7 @@ services:
       start_period: 120s
 
   op-17-8:
-    image: openproject/openproject:17.8.0
+    image: openproject/openproject:17.8.1
     ports:
       - "8178:80"
     environment:
@@ -348,6 +353,25 @@ services:
     volumes:
       - op178_pgdata:/var/openproject/pgdata
       - op178_assets:/var/openproject/assets
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost/health_checks/default"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 120s
+
+  op-17-9:
+    image: openproject/openproject:17.9.1
+    ports:
+      - "8179:80"
+    environment:
+      OPENPROJECT_HOST__NAME: localhost:8179
+      OPENPROJECT_HTTPS: "false"
+      OPENPROJECT_DEFAULT__LANGUAGE: en
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:?set via up.sh / .env}
+    volumes:
+      - op179_pgdata:/var/openproject/pgdata
+      - op179_assets:/var/openproject/assets
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost/health_checks/default"]
       interval: 15s
@@ -420,4 +444,6 @@ volumes:
   op177_assets:
   op178_pgdata:
   op178_assets:
+  op179_pgdata:
+  op179_assets:
   nextcloud_data:
