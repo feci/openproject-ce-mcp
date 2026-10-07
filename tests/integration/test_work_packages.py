@@ -1062,6 +1062,45 @@ async def test_round_trip_single_value_target_versions_write(
     assert cleared.version is None
 
 
+async def test_round_trip_observed_in_versions_write_and_filter(
+    client: OpenProjectClient, test_project: str, wp_ids: list[int]
+) -> None:
+    """observed_in_versions (17.9+) round-trips through create, read, filter and
+    clear; older servers reject the write with the version hint and skip here."""
+    versions = await client.version.list(project=test_project)
+    if "Seed Version 1.0" not in {v.name for v in versions.results}:
+        pytest.skip("seeded version 'Seed Version 1.0' not present (check docker/test/seed.rb ran)")
+
+    subject = f"{_SUBJECT} observed_in_versions {uuid.uuid4().hex[:8]}"
+    try:
+        created = await client.work_package.create(
+            project=test_project,
+            type="Task",
+            subject=subject,
+            observed_in_versions=["Seed Version 1.0"],
+            confirm=True,
+        )
+    except InvalidInputError as exc:
+        if "observed_in_versions is not available" in str(exc):
+            pytest.skip("observed_in_versions requires OpenProject 17.9+ and a type with the attribute enabled")
+        raise
+    assert created.ready, created.validation_errors
+    wp_ids.append(created.work_package_id)
+
+    wp = await client.work_package.get(created.work_package_id)
+    assert wp.observed_in_versions == ["Seed Version 1.0"]
+    assert wp.target_versions == []
+
+    filtered = await client.work_package.list(project=test_project, observed_in_version="Seed Version 1.0")
+    assert created.work_package_id in [row.id for row in filtered.results]
+
+    cleared = await client.work_package.update(
+        work_package_id=created.work_package_id, observed_in_versions=[], confirm=True
+    )
+    assert cleared.ready, cleared.validation_errors
+    assert (await client.work_package.get(created.work_package_id)).observed_in_versions == []
+
+
 async def test_round_trip_target_versions_write_on_create_live(
     multi_target_versions_disabled, client: OpenProjectClient, test_project: str, wp_ids: list[int]
 ) -> None:

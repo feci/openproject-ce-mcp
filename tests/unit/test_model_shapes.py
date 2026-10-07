@@ -806,6 +806,7 @@ async def test_get_work_package_tolerates_ancestor_without_display_id() -> None:
             project=None,
             version=None,
             target_versions=[],
+            observed_in_versions=[],
             sprint=None,
             parent_id=1,
             parent_display_id=None,

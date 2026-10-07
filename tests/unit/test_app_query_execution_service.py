@@ -36,6 +36,7 @@ def _summary(wp_id: int) -> WorkPackageSummary:
         project="Demo",
         version=None,
         target_versions=[],
+        observed_in_versions=[],
         sprint=None,
         start_date=None,
         due_date=None,

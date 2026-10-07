@@ -57,6 +57,7 @@ def _summary(
         project=project,
         version=version,
         target_versions=target_versions if target_versions is not None else [],
+        observed_in_versions=[],
         sprint=None,
         start_date=None,
         due_date=None,
@@ -88,6 +89,7 @@ def _detail(
         project="Demo",
         version=version,
         target_versions=target_versions if target_versions is not None else [],
+        observed_in_versions=[],
         sprint=None,
         parent_id=None,
         parent_display_id=None,
@@ -1820,6 +1822,75 @@ async def test_create_target_versions_empty_list_sets_empty_links() -> None:
     result = await service.create(project="demo", type="Task", subject="New WP", target_versions=[], confirm=False)
 
     assert result.payload["_links"]["targetVersions"] == []
+
+
+@pytest.mark.asyncio
+async def test_create_observed_in_versions_resolves_dedupes_and_links() -> None:
+    api = _FakeWorkPackageApi()
+    service, _ = _service(api)
+    resolved_refs: list[str] = []
+
+    async def resolve_version_id(version_ref, *, project=None, context=None):
+        resolved_refs.append(version_ref)
+        return {"1.0": "10", "2.0": "20"}[version_ref]
+
+    service._resolve_version_id = resolve_version_id  # type: ignore[method-assign]
+
+    result = await service.create(
+        project="demo", type="Task", subject="New WP", observed_in_versions=["1.0", "2.0", "1.0"], confirm=False
+    )
+
+    assert resolved_refs == ["1.0", "2.0"]
+    assert result.payload["_links"]["observedInVersions"] == [
+        {"href": "/api/v3/versions/10"},
+        {"href": "/api/v3/versions/20"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_create_observed_in_versions_empty_list_sets_empty_links() -> None:
+    api = _FakeWorkPackageApi()
+    service, _ = _service(api)
+
+    result = await service.create(project="demo", type="Task", subject="New WP", observed_in_versions=[], confirm=False)
+
+    assert result.payload["_links"]["observedInVersions"] == []
+
+
+@pytest.mark.asyncio
+async def test_create_observed_in_versions_rejected_when_the_form_does_not_echo_the_attribute() -> None:
+    # Servers before 17.9 (or a type without the attribute) drop the unknown
+    # link silently; the write must fail instead of confirming a lost value.
+    class _DroppingApi(_FakeWorkPackageApi):
+        async def validate_create(self, project_id: str, payload: dict) -> dict:
+            echoed = {**payload, "_links": {k: v for k, v in payload["_links"].items() if k != "observedInVersions"}}
+            return await super().validate_create(project_id, echoed)
+
+    api = _DroppingApi()
+    service, _ = _service(api)
+
+    with pytest.raises(InvalidInputError, match="requires OpenProject 17.9"):
+        await service.create(project="demo", type="Task", subject="New WP", observed_in_versions=["1.0"], confirm=False)
+
+
+@pytest.mark.asyncio
+async def test_create_observed_in_versions_rejected_when_hidden() -> None:
+    settings = dataclasses.replace(make_settings(), hide_work_package_fields=("observed_in_versions",))
+    api = _FakeWorkPackageApi()
+    service, _ = _service(api, settings=settings)
+
+    with pytest.raises(InvalidInputError, match="observed_in_versions"):
+        await service.create(project="demo", type="Task", subject="New WP", observed_in_versions=["1.0"], confirm=False)
+
+
+@pytest.mark.asyncio
+async def test_list_observed_in_version_filter_resolves_the_version() -> None:
+    api = _FakeWorkPackageApi()
+    service, _ = _service(api)
+
+    await service.list(observed_in_version="1.0")
+
+    assert {"observed_in_version_id": {"operator": "=", "values": ["4"]}} in api.list_calls[0]["filters"]
 
 
 @pytest.mark.asyncio

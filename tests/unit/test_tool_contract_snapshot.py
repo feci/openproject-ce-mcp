@@ -211,7 +211,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "bulk_create_work_packages": {
-        "description_hash": "a7e2989cc5c3e1ea15f91baca4e506cf47028caac75f186ae87514c6106341de",
+        "description_hash": "7f0e9a70adcc9878d7e89374756b6baf22e0cd293854711e5d3ce89e54004d19",
         "input_schema": {
             "properties": {
                 "items": {"items": {"additionalProperties": True, "type": "object"}, "title": "Items", "type": "array"},
@@ -233,7 +233,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_WRITE", "OPENPROJECT_ENABLE_WORK_PACKAGE_READ"),
     },
     "bulk_update_work_packages": {
-        "description_hash": "b8a6a9fa15ed2805513b3515c1c0cf7a1c83e7788ffd13d2ad6ca2a088ca7d45",
+        "description_hash": "5a4fc00a9160307aa508497a687abcc7a2aa6c1946fdc709c0bdfe122ccc9870",
         "input_schema": {
             "properties": {
                 "items": {"items": {"additionalProperties": True, "type": "object"}, "title": "Items", "type": "array"},
@@ -669,7 +669,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "capability_env_vars": ("OPENPROJECT_ENABLE_ADMIN_WRITE", "OPENPROJECT_ENABLE_ADMIN_READ"),
     },
     "create_subtask": {
-        "description_hash": "b28d2b2dd93791e8e59a895ddcec4c2bdc33b329d50de2ecf251f94ff8c9550a",
+        "description_hash": "6094d30797a1bd43066b05580cc0971ad80ee5f528369c2883e2188ee11318a4",
         "input_schema": {
             "properties": {
                 "parent_work_package_id": {
@@ -688,6 +688,11 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
                     "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
                     "default": None,
                     "title": "Target Versions",
+                },
+                "observed_in_versions": {
+                    "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
+                    "default": None,
+                    "title": "Observed In Versions",
                 },
                 "project_phase": {
                     "anyOf": [{"type": "string"}, {"type": "null"}],
@@ -907,7 +912,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "capability_env_vars": ("OPENPROJECT_ENABLE_VERSION_WRITE", "OPENPROJECT_ENABLE_VERSION_READ"),
     },
     "create_work_package": {
-        "description_hash": "589b6fcb9debc624ee79e016fd078f4b8d784c87ea78ff824a65777757de86ce",
+        "description_hash": "51c706fe38e0a9aaf9ecf360f36f73ace7e36103af0e080c3e42c138bc101ec1",
         "input_schema": {
             "properties": {
                 "project": {"title": "Project", "type": "string"},
@@ -923,6 +928,11 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
                     "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
                     "default": None,
                     "title": "Target Versions",
+                },
+                "observed_in_versions": {
+                    "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
+                    "default": None,
+                    "title": "Observed In Versions",
                 },
                 "project_phase": {
                     "anyOf": [{"type": "string"}, {"type": "null"}],
@@ -5015,7 +5025,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_READ",),
     },
     "list_work_packages": {
-        "description_hash": "4cddd4d8c3fad11c9bb465119d7bbdfbad78dfda9dd99b80479e81c8d9bf6363",
+        "description_hash": "5203b45d05e03ccfabdb3aee2212d5c45ed0c8c9a2a2ec747c6f63bf90c6fbf0",
         "input_schema": {
             "properties": {
                 "project": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None, "title": "Project"},
@@ -5025,6 +5035,11 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
                     "anyOf": [{"type": "string"}, {"type": "null"}],
                     "default": None,
                     "title": "Version Status",
+                },
+                "observed_in_version": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "title": "Observed In Version",
                 },
                 "open_only": {"default": False, "title": "Open Only", "type": "boolean"},
                 "assignee_me": {"default": False, "title": "Assignee Me", "type": "boolean"},
@@ -6013,7 +6028,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "capability_env_vars": ("OPENPROJECT_ENABLE_VERSION_WRITE", "OPENPROJECT_ENABLE_VERSION_READ"),
     },
     "update_work_package": {
-        "description_hash": "47693d109e614b94d28ad97e7cf68d16e062bd4bf5da4df4126c9eea90c31d82",
+        "description_hash": "d84f4657f938f5d839766d6a4b3554ba090dd171b0618cc8ac2bd62a88217318",
         "input_schema": {
             "properties": {
                 "work_package_id": {"anyOf": [{"type": "integer"}, {"type": "string"}], "title": "Work Package Id"},
@@ -6029,6 +6044,11 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
                     "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
                     "default": None,
                     "title": "Target Versions",
+                },
+                "observed_in_versions": {
+                    "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
+                    "default": None,
+                    "title": "Observed In Versions",
                 },
                 "sprint": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None, "title": "Sprint"},
                 "project_phase": {

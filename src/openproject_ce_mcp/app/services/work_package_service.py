@@ -257,6 +257,20 @@ def _narrow_cleared(value: Any, *, sentinel: object = None) -> Any:
     return value
 
 
+def _ensure_observed_in_versions_offered(form_payload: dict[str, Any]) -> None:
+    """Reject an observed_in_versions write the server cannot store.
+
+    OpenProject's form silently drops links it does not know, so a request
+    against a server older than 17.9, or a type without the attribute,
+    would otherwise be confirmed and lose the value.
+    """
+    if "observedInVersions" not in form_payload.get("_links", {}):
+        raise InvalidInputError(
+            "observed_in_versions is not available here: it requires OpenProject 17.9 or newer and a work "
+            "package type that has the 'Observed in versions' attribute enabled."
+        )
+
+
 def _strip_unrequested_target_versions(payload: dict[str, Any]) -> dict[str, Any]:
     """Drop an echoed `_links.targetVersions` OpenProject's work-package form
     response adds even when the request never set it, so committing the
@@ -1097,6 +1111,7 @@ class WorkPackageService:
         type: str | None = None,
         version: str | None = None,
         version_status: str | None = None,
+        observed_in_version: str | None = None,
         open_only: bool = False,
         assignee_me: bool = False,
         assignee: str | None = None,
@@ -1169,6 +1184,11 @@ class WorkPackageService:
         if version_status:
             status_operator = {"open": "o", "closed": "c", "locked": "l"}[version_status]
             filters.append({"version_id": {"operator": status_operator, "values": []}})
+        if observed_in_version:
+            observed_version_id = await self._resolve_version_id(
+                observed_in_version, project=project, context=resolution_context
+            )
+            filters.append({"observed_in_version_id": {"operator": "=", "values": [observed_version_id]}})
         if assignee and not assignee_me:
             assignee_id = await self._resolve_principal_id(assignee)
             filters.append({"assigned_to_id": {"operator": "=", "values": [assignee_id]}})
@@ -1455,6 +1475,28 @@ class WorkPackageService:
             else:
                 payload[schema_key] = raw_value
 
+    async def _version_links(
+        self,
+        refs: builtins.list[str],
+        *,
+        project: str,
+        resolution_context: WorkPackageResolutionContext | None,
+        project_context: ProjectResolutionContext | None,
+    ) -> builtins.list[dict[str, Any]]:
+        resolved_ids: list[str] = []
+        for ref in refs:
+            resolved_id = await resolve_wp_ref_id(
+                "version",
+                str(ref),
+                project=project,
+                cache=resolution_context,
+                resolve=lambda ref=ref: self._resolve_version_id(str(ref), project=project, context=project_context),
+            )
+            resolved_ids.append(resolved_id)
+        return [
+            {"href": _api_href(f"versions/{vid}", api_prefix=self._api_prefix)} for vid in dict.fromkeys(resolved_ids)
+        ]
+
     async def _build_write_payload(
         self,
         *,
@@ -1464,6 +1506,7 @@ class WorkPackageService:
         description: str | None = None,
         version: Any = None,
         target_versions: builtins.list[str] | None = None,
+        observed_in_versions: builtins.list[str] | None = None,
         sprint: Any = None,
         project_phase: Any = None,
         status: str | None = None,
@@ -1563,25 +1606,17 @@ class WorkPackageService:
         elif target_versions is not None:
             hidden_fields.ensure_field_writable("work_package", "version", settings=self._settings)
             hidden_fields.ensure_field_writable("work_package", "target_versions", settings=self._settings)
-            if not target_versions:
-                links["targetVersions"] = []
-            else:
-                resolved_ids: list[str] = []
-                for ref in target_versions:
-                    resolved_id = await resolve_wp_ref_id(
-                        "version",
-                        str(ref),
-                        project=project,
-                        cache=resolution_context,
-                        resolve=lambda ref=ref: self._resolve_version_id(
-                            str(ref), project=project, context=project_context
-                        ),
-                    )
-                    resolved_ids.append(resolved_id)
-                deduped_ids = list(dict.fromkeys(resolved_ids))
-                links["targetVersions"] = [
-                    {"href": _api_href(f"versions/{vid}", api_prefix=self._api_prefix)} for vid in deduped_ids
-                ]
+            links["targetVersions"] = await self._version_links(
+                target_versions, project=project, resolution_context=resolution_context, project_context=project_context
+            )
+        if observed_in_versions is not None:
+            hidden_fields.ensure_field_writable("work_package", "observed_in_versions", settings=self._settings)
+            links["observedInVersions"] = await self._version_links(
+                observed_in_versions,
+                project=project,
+                resolution_context=resolution_context,
+                project_context=project_context,
+            )
 
         if sprint is CLEAR:
             hidden_fields.ensure_field_writable("work_package", "sprint", settings=self._settings)
@@ -1706,6 +1741,7 @@ class WorkPackageService:
         description: str | None = None,
         version: Any = None,
         target_versions: builtins.list[str] | None = None,
+        observed_in_versions: builtins.list[str] | None = None,
         project_phase: Any = None,
         assignee: Any = None,
         responsible: Any = None,
@@ -1758,6 +1794,7 @@ class WorkPackageService:
             description=description,
             version=version,
             target_versions=target_versions,
+            observed_in_versions=observed_in_versions,
             project_phase=project_phase,
             assignee=assignee,
             responsible=responsible,
@@ -1774,6 +1811,8 @@ class WorkPackageService:
         )
         form = await self._api.validate_create(project_id, payload)
         parsed = await self._api.parse_form(form)
+        if observed_in_versions is not None:
+            _ensure_observed_in_versions_offered(parsed.payload)
         outcome = await _finalize_write(
             confirm=confirm,
             payload=parsed.payload,
@@ -1805,6 +1844,7 @@ class WorkPackageService:
         description: str | None = None,
         version: Any = None,
         target_versions: builtins.list[str] | None = None,
+        observed_in_versions: builtins.list[str] | None = None,
         project_phase: Any = None,
         assignee: Any = None,
         responsible: Any = None,
@@ -1842,6 +1882,7 @@ class WorkPackageService:
             description=description,
             version=version,
             target_versions=target_versions,
+            observed_in_versions=observed_in_versions,
             project_phase=project_phase,
             assignee=assignee,
             responsible=responsible,
@@ -1855,6 +1896,8 @@ class WorkPackageService:
         )
         form = await self._api.validate_create(str(project_id), payload)
         parsed = await self._api.parse_form(form)
+        if observed_in_versions is not None:
+            _ensure_observed_in_versions_offered(parsed.payload)
         parent_title = _trim_text(parent_project_link.get("title") if parent_project_link else None)
         outcome = await _finalize_write(
             confirm=confirm,
@@ -1898,6 +1941,7 @@ class WorkPackageService:
                         description=item.get("description"),
                         version=item.get("version"),
                         target_versions=item.get("target_versions"),
+                        observed_in_versions=item.get("observed_in_versions"),
                         project_phase=item.get("project_phase"),
                         assignee=item.get("assignee"),
                         responsible=item.get("responsible"),
@@ -2008,6 +2052,7 @@ class WorkPackageService:
         type: str | None = None,
         version: Any = None,
         target_versions: builtins.list[str] | None = None,
+        observed_in_versions: builtins.list[str] | None = None,
         sprint: Any = None,
         project_phase: Any = None,
         status: str | None = None,
@@ -2075,6 +2120,7 @@ class WorkPackageService:
             description=description,
             version=version,
             target_versions=target_versions,
+            observed_in_versions=observed_in_versions,
             sprint=sprint,
             project_phase=project_phase,
             status=status,
@@ -2130,6 +2176,8 @@ class WorkPackageService:
 
         version_was_requested = "version" in payload.get("_links", {}) and target_versions is None
         parsed = await self._api.parse_form(form)
+        if observed_in_versions is not None:
+            _ensure_observed_in_versions_offered(parsed.payload)
         project_name = _trim_text(current.get("_links", {}).get("project", {}).get("title"))
         outcome = await _finalize_write(
             confirm=confirm,
@@ -2174,6 +2222,7 @@ class WorkPackageService:
                         type=item.get("type"),
                         version=item.get("version"),
                         target_versions=item.get("target_versions"),
+                        observed_in_versions=item.get("observed_in_versions"),
                         sprint=item.get("sprint"),
                         project_phase=item.get("project_phase"),
                         status=item.get("status"),

@@ -22,6 +22,7 @@ keys, supported operators, and implementation details.
 | type | type_id | :list | = | =, ! | Filter by work package type ID |
 | version | version_id | :list_optional | = | =, !, *, !* | Filter by version ID |
 | version_status | version_id | :list_optional (custom) | o, c, l | o, c, l, =, !, *, !* | o=open, c=closed, l=locked (VersionFilter adds o/c/l operators) |
+| observed_in_version | observed_in_version_id | :list_optional | = | =, !, *, !*, o, c, l | Filter by a version a bug was observed in (OpenProject 17.9+) |
 | project | project_id | :list | = | =, ! | Filter by project ID |
 | search | subject_or_id | :text | ** | ~, !~ | Free text search (search_work_packages only); matches only subject and numeric ID, never version/category/description or other linked fields — use the `version` filter above for version-based matches |
 | created_on | created_at | :datetime_past | =d | >t-, <t-, t-, t, w, =d, <>d | Single date exact match |

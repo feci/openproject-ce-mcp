@@ -1074,6 +1074,27 @@ def test_target_versions_and_version_both_absent() -> None:
     assert summary.version is None
 
 
+def test_observed_in_versions_lists_titles_in_order() -> None:
+    payload = _wp_payload()
+    payload["_links"]["observedInVersions"] = [
+        {"href": "/api/v3/versions/2", "title": "1.0"},
+        {"href": "/api/v3/versions/3", "title": "1.1"},
+    ]
+
+    summary = normalize_work_package_summary(payload, text_limit=None)
+
+    assert summary.observed_in_versions == ["1.0", "1.1"]
+
+
+def test_observed_in_versions_absent_on_older_servers_is_empty() -> None:
+    payload = _wp_payload()
+    payload["_links"].pop("observedInVersions", None)
+
+    summary = normalize_work_package_summary(payload, text_limit=None)
+
+    assert summary.observed_in_versions == []
+
+
 def test_target_versions_copied_verbatim_in_detail_from_summary() -> None:
     payload = _wp_payload()
     payload["_links"]["targetVersions"] = [

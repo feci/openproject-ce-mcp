@@ -64,6 +64,9 @@ development baseline.
   also matching a recurring series' title) on OpenProject 17.9 and later.
 - `end_recurring_meeting` ends a recurring meeting series without deleting
   it or its past occurrences (OpenProject 17.8 and later).
+- Work packages expose `observed_in_versions` (OpenProject 17.9+): read on
+  every work package, written through the create, update and bulk tools, and
+  filterable with `list_work_packages(observed_in_version=...)`.
 
 ### Changed
 

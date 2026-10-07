@@ -45,6 +45,14 @@ than one target version — use `target_versions` explicitly instead, so a
 multi-version assignment is never silently collapsed to one or wiped by a call
 that only meant to touch the single-value field.
 
+`observed_in_versions` (OpenProject 17.9+): a list of version names/ids
+recording where a bug was observed, independent of `target_versions`. Read on
+every work package (empty on older servers), written through the same create,
+update and bulk tools (`[]` clears it), and filterable with
+`list_work_packages(observed_in_version=...)`. OpenProject offers the
+attribute per work package type; a write for a type or server without it is
+rejected instead of being silently dropped.
+
 All list tools are bounded and paginated. They return compact summaries — not
 raw OpenProject HAL payloads.
 

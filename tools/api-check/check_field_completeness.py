@@ -248,14 +248,6 @@ EXCLUSIONS: list[FieldExclusion] = [
     ),
     FieldExclusion(
         "work_package",
-        "observedInVersions",
-        ExclusionCategory.INTERNAL_OTHER,
-        "New in 17.9 (associated_resources :observed_in_versions, multi-value "
-        "'observed in' versions for bugs); not modeled on this line yet -- "
-        "planned as a target_versions-style read/write field for the next minor.",
-    ),
-    FieldExclusion(
-        "work_package",
         "customActions",
         ExclusionCategory.ENTERPRISE,
         "Custom Actions is Enterprise-only per the CE-only policy "

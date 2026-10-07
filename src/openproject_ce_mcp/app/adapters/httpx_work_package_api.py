@@ -419,6 +419,10 @@ def normalize_work_package_summary(payload: dict[str, Any], *, text_limit: int |
         legacy_version = _link_title(links.get("version"))
         target_versions = [legacy_version] if legacy_version is not None else []
         version = legacy_version
+    observed_in_version_links = links.get("observedInVersions")
+    observed_in_versions = (
+        _link_titles(observed_in_version_links) if isinstance(observed_in_version_links, list) else []
+    )
     return WorkPackageSummary(
         id=int(payload["id"]),
         display_id=payload.get("displayId"),
@@ -432,6 +436,7 @@ def normalize_work_package_summary(payload: dict[str, Any], *, text_limit: int |
         project=_link_title(links.get("project")),
         version=version,
         target_versions=target_versions,
+        observed_in_versions=observed_in_versions,
         sprint=_link_title(links.get("sprint")),
         start_date=start_date,
         due_date=due_date,
@@ -541,6 +546,7 @@ def normalize_work_package_detail(
         project=summary.project,
         version=summary.version,
         target_versions=summary.target_versions,
+        observed_in_versions=summary.observed_in_versions,
         sprint=summary.sprint,
         parent_id=summary.parent_id,
         parent_display_id=summary.parent_display_id,

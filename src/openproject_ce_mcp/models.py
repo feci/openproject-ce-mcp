@@ -425,6 +425,7 @@ class WorkPackageSummary:
     project: str | None
     version: str | None
     target_versions: list[str]
+    observed_in_versions: list[str]
     sprint: str | None
     start_date: str | None
     due_date: str | None
@@ -472,6 +473,7 @@ class WorkPackageDetail:
     project: str | None
     version: str | None
     target_versions: list[str]
+    observed_in_versions: list[str]
     sprint: str | None
     parent_id: int | None
     parent_display_id: str | None
