@@ -58,7 +58,6 @@ from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-import tiktoken  # noqa: E402
 
 from openproject_ce_mcp.client import OpenProjectClient  # noqa: E402
 from openproject_ce_mcp.config import Settings  # noqa: E402
@@ -66,11 +65,18 @@ from openproject_ce_mcp.models import SortCriterion  # noqa: E402
 from openproject_ce_mcp.presentation import _to_payload  # noqa: E402
 from openproject_ce_mcp.server import CE_INSTRUCTIONS, create_app  # noqa: E402
 
-_ENCODING = tiktoken.get_encoding("o200k_base")
+_encoding: Any = None
 
 
 def _tokens(raw: str) -> int:
-    return len(_ENCODING.encode(raw))
+    # Loaded on first use: tiktoken is an optional extra and fetches its
+    # encoding over the network, which the offline unit suite must not need.
+    global _encoding
+    if _encoding is None:
+        import tiktoken
+
+        _encoding = tiktoken.get_encoding("o200k_base")
+    return len(_encoding.encode(raw))
 
 
 # A substring of CE_INSTRUCTIONS distinctive enough that a false-positive match

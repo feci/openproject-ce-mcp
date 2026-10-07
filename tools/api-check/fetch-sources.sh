@@ -9,7 +9,8 @@
 #
 set -euo pipefail
 
-REPO="https://github.com/opf/openproject.git"
+# Both overridable so the script can be exercised against a local repository.
+REPO="${OPENPROJECT_SOURCES_REPO:-https://github.com/opf/openproject.git}"
 
 # Pinned versions as "label:tag" pairs (latest patch of each minor from 16.0).
 # Lets the API check map exactly which release changes a symbol the client uses.
@@ -74,7 +75,7 @@ SPARSE_PATHS=(
 )
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-DEST_BASE="$(dirname "$ROOT")/op-sources"
+DEST_BASE="${OPENPROJECT_SOURCES_DIR:-$(dirname "$ROOT")/op-sources}"
 mkdir -p "$DEST_BASE"
 
 for entry in "${VERSIONS[@]}"; do

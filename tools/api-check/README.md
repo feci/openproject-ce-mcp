@@ -60,7 +60,11 @@ that table when a resource is reclassified.
 
 `fetch-sources.sh` makes shallow, sparse clones (only the API subtrees) into
 `op-sources/<version>/`, one level above this repo (the shared umbrella
-directory) — not part of this repo, so nothing to gitignore here. Two
+directory) — not part of this repo, so nothing to gitignore here.
+`OPENPROJECT_SOURCES_DIR` moves that directory for the fetch script and all
+three check scripts alike (for example from a worktree elsewhere), and
+`OPENPROJECT_SOURCES_REPO` replaces the upstream repository, which the unit
+tests use to exercise the script against a local repository. Two
 different refresh cases:
 - **Widened `SPARSE_PATHS`** (a new `Assumption` needs a subtree not yet
   fetched): just re-run the script. For a version already cloned, it now runs

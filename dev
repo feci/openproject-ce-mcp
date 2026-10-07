@@ -42,7 +42,10 @@ lint() {
 }
 
 test_() {
-    uv run pytest --cov=src/openproject_ce_mcp --cov-report=term-missing "$@"
+    # Separate floors so well-covered client code cannot carry untested audit tooling.
+    uv run pytest --cov=src/openproject_ce_mcp --cov=tools --cov-report= --cov-fail-under=0 "$@"
+    uv run coverage report --include='*/src/openproject_ce_mcp/*' --fail-under=88
+    uv run coverage report --include='*/tools/*' --fail-under=85
 }
 
 build() {
