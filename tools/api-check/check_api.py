@@ -436,6 +436,13 @@ FILTER_ALIASES = {
     "priority_id": "priority",
     "type_id": "type",
     "version_id": "version",
+    "observed_in_version_id": "observed_in_versions",
+}
+# Filter keys of module resources, mapped to the query tree they belong to.
+# Unscoped keys are looked up in core only: a module's filter of the same name
+# (documents also has "title") must not stand in for the one the client uses.
+FILTER_QUERY_SCOPES = {
+    "title": "meetings",
 }
 FILTER_SKIP = {"date", "scope", "context"}  # query params / matchers, not filter files
 
@@ -538,12 +545,17 @@ def _resource_present(version: str, resource: str) -> bool:
 
 
 def _filter_present(version: str, filter_key: str) -> bool:
-    qroot = SOURCES / version / "app" / "models" / "queries"
-    if not qroot.exists():
-        return False
+    base = SOURCES / version
+    scope = FILTER_QUERY_SCOPES.get(filter_key)
+    if scope is None:
+        qroots = [base / "app" / "models" / "queries"]
+    else:
+        qroots = [
+            qroot / scope for qroot in (base / "app" / "models" / "queries", *base.glob("modules/*/app/models/queries"))
+        ]
     name = FILTER_ALIASES.get(filter_key, filter_key)
     # Filters are <name>_filter.rb files (allow plural dir layouts).
-    return _find_any(qroot, f"{name}_filter.rb")
+    return any(_find_any(qroot, f"{name}_filter.rb") for qroot in qroots if qroot.exists())
 
 
 def run_full_coverage() -> int:

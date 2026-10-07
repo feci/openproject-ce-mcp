@@ -94,3 +94,36 @@ def test_main_fails_when_a_pinned_checkout_is_unusable(monkeypatch, capsys):
 
     assert check_api.main() == 2
     assert "17.9: missing checkout" in capsys.readouterr().err
+
+
+def test_filter_present_finds_module_filters_and_aliased_keys(tmp_path, monkeypatch):
+    monkeypatch.setattr(check_api, "SOURCES", tmp_path)
+    core = tmp_path / "17.9" / "app" / "models" / "queries" / "work_packages" / "filter"
+    module = tmp_path / "17.9" / "modules" / "meeting" / "app" / "models" / "queries" / "meetings" / "filters"
+    core.mkdir(parents=True)
+    module.mkdir(parents=True)
+    (core / "observed_in_versions_filter.rb").write_text("")
+    (module / "title_filter.rb").write_text("")
+
+    assert check_api._filter_present("17.9", "observed_in_version_id")
+    assert check_api._filter_present("17.9", "title")
+    assert not check_api._filter_present("17.9", "no_such_key")
+
+
+def test_scoped_filter_key_ignores_another_resources_filter_of_the_same_name(tmp_path, monkeypatch):
+    monkeypatch.setattr(check_api, "SOURCES", tmp_path)
+    documents = tmp_path / "16.6" / "modules" / "documents" / "app" / "models" / "queries" / "documents" / "filters"
+    documents.mkdir(parents=True)
+    (documents / "title_filter.rb").write_text("")
+
+    assert not check_api._filter_present("16.6", "title")
+
+
+def test_unscoped_filter_key_is_not_satisfied_by_a_module_filter(tmp_path, monkeypatch):
+    monkeypatch.setattr(check_api, "SOURCES", tmp_path)
+    (tmp_path / "17.9" / "app" / "models" / "queries").mkdir(parents=True)
+    module = tmp_path / "17.9" / "modules" / "costs" / "app" / "models" / "queries" / "cost_entries" / "filters"
+    module.mkdir(parents=True)
+    (module / "project_filter.rb").write_text("")
+
+    assert not check_api._filter_present("17.9", "project_id")
