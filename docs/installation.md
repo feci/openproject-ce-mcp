@@ -14,7 +14,7 @@ every environment variable it can set, see [Configuration](configuration.md).
 | | |
 | --- | --- |
 | Python | 3.10 or later |
-| OpenProject | Community Edition 16.0 or later (source-audited through 17.8, runtime-smoke-tested through 17.8), API v3 accessible |
+| OpenProject | Community Edition 16.0 or later (source-audited through 17.9, runtime-smoke-tested through 17.9), API v3 accessible |
 | OS | macOS 12+, Linux, or Windows 10/11 |
 
 On OpenProject 16.0 specifically: emoji reactions and project phase

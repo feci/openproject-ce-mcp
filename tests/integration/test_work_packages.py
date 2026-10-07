@@ -1087,6 +1087,9 @@ async def test_round_trip_multi_value_target_versions_write(
     fresh work package actually persists as two entries server-side --
     proves the real multi-value write path works end-to-end, not just that
     the client sends the right payload shape."""
+    versions = await client.version.list(project=test_project)
+    if "Seed Version 2.0" not in {v.name for v in versions.results}:
+        pytest.skip("seeded second version not present (run docker/test/up.sh with SEED_MULTI_VERSIONS=1 first)")
     created = await client.work_package.create(
         project=test_project, type="Task", subject=f"{_SUBJECT} target_versions multi", confirm=True
     )

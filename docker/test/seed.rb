@@ -100,9 +100,40 @@ end
 all_modules = OpenProject::AccessControl.available_project_modules.map(&:to_s)
 project.enabled_module_names = (project.enabled_module_names | all_modules)
 # A new project also has no work-package types enabled; assign them all so
-# create_work_package (Task, etc.) works.
-project.types = Type.all
+# create_work_package (Task, etc.) works. 17.9 dropped the `types` writer
+# (Project#types became read-only via Projects::EnabledTypes; types are
+# enabled through ProjectType rows with a variant); 16.x has no ProjectType
+# model at all, so pick the writer the running version actually offers.
+if project.respond_to?(:types=)
+  project.types = Type.all
+else
+  Type.all.each { |type| project.project_types.find_or_create_by!(type: type) }
+end
 project.save!
+
+# Reading side of the same split: 17.8+ expose the enabled root types as
+# `enabled_types`, older versions only as the `types` association.
+def enabled_types_of(project)
+  project.respond_to?(:enabled_types) ? project.enabled_types : project.types
+end
+
+# 17.9 moved "default type for new projects" from Type#is_default to
+# TypeVariant#enabled_in_new_projects, but its seeder sets that flag on no
+# variant, so a freshly installed 17.9 creates every new project without any
+# work-package type (upgraded instances keep the flag through the migration's
+# rename). Mirror 17.8's seeded defaults (Task, Milestone, Summary task) so
+# the disposable per-test projects behave like an upgraded instance.
+if defined?(TypeVariant) && TypeVariant.column_names.include?("enabled_in_new_projects") &&
+   TypeVariant.enabled_in_new_projects.none?
+  default_names = ["Task", "Milestone", "Summary task"]
+  enabled = Type.where(name: default_names).filter_map do |type|
+    variant = type.respond_to?(:default_variant) ? type.default_variant : nil
+    next unless variant
+    variant.update!(enabled_in_new_projects: true)
+    type.name
+  end
+  log("WARNING: no type variant was enabled for new projects (fresh 17.9 install, upstream seeder gap) -- enabled #{enabled.join(', ')}")
+end
 log("enabled modules: #{project.reload.enabled_module_names.sort.join(', ')}")
 wp_role = Role.givable.find { |r| r.permissions.include?(:view_work_packages) }
 if wp_role
@@ -217,7 +248,7 @@ else
 end
 
 if project.work_packages.empty?
-  type = project.types.first || Type.first
+  type = enabled_types_of(project).first || Type.first
   status = Status.respond_to?(:default) && Status.default ? Status.default : Status.first
   priority = (IssuePriority.respond_to?(:default) && IssuePriority.default) || IssuePriority.active.first || IssuePriority.first
   wp = WorkPackage.create!(
@@ -352,7 +383,19 @@ log("custom field '#{custom_field.name}' present (id=#{custom_field.id}, format=
 # be attached to the relevant work-package TYPE(s) for
 # available_custom_fields (what CustomFieldInjector actually renders) to
 # include it -- attach it to every type already enabled on TST above.
-missing_types = project.types.reject { |t| t.custom_fields.include?(custom_field) }
+if custom_field.respond_to?(:type_variants)
+  # 17.9+: the custom-field/type join moved to TypeVariant; attach to the
+  # variant each enabled type actually uses in this project.
+  variants = project.project_types.map(&:variant).compact
+  missing_variants = variants.reject { |v| v.custom_fields.include?(custom_field) }
+  unless missing_variants.empty?
+    custom_field.type_variants << missing_variants
+    log("attached custom field '#{custom_field.name}' to type variants: #{missing_variants.map { |v| v.type.name }.join(', ')}")
+  end
+  missing_types = []
+else
+  missing_types = enabled_types_of(project).reject { |t| t.custom_fields.include?(custom_field) }
+end
 unless missing_types.empty?
   custom_field.types << missing_types
   log("attached custom field '#{custom_field.name}' to types: #{missing_types.map(&:name).join(', ')}")
@@ -416,7 +459,7 @@ end
 # experimental feature flag, separate from the plain Setting) -- 17.8 drops
 # that second gate, so setting Setting.work_package_multiple_versions alone
 # is sufficient there. Verified live (2026-09-07) against
-# openproject/openproject:17.8.0: the setting ships with default: true there
+# openproject/openproject 17.8+ (verified 17.8.1, 17.9.1): the setting ships with default: true there
 # (config/constants/settings/definition.rb), NOT off by default as an
 # earlier version of this seed assumed. The setting is explicitly FORCED to a
 # known state below (not just conditionally enabled) so op-17-8 gives
@@ -457,7 +500,7 @@ if project.respond_to?(:versions) && WorkPackage.new.respond_to?(:target_version
   log("version '#{single_version.name}' present (id=#{single_version.id})")
 
   if WorkPackage.where(project: project, subject: "Seed work package (single target version)").empty?
-    type = project.types.first || Type.first
+    type = enabled_types_of(project).first || Type.first
     status = Status.respond_to?(:default) && Status.default ? Status.default : Status.first
     priority = (IssuePriority.respond_to?(:default) && IssuePriority.default) || IssuePriority.active.first || IssuePriority.first
     single_version_wp = WorkPackage.new(
@@ -488,7 +531,7 @@ if project.respond_to?(:versions) && WorkPackage.new.respond_to?(:target_version
     log("version '#{second_version.name}' present (id=#{second_version.id})")
 
     if WorkPackage.where(project: project, subject: "Seed work package (multi target version)").empty?
-      type = project.types.first || Type.first
+      type = enabled_types_of(project).first || Type.first
       status = Status.respond_to?(:default) && Status.default ? Status.default : Status.first
       priority = (IssuePriority.respond_to?(:default) && IssuePriority.default) || IssuePriority.active.first || IssuePriority.first
       multi_version_wp = WorkPackage.new(

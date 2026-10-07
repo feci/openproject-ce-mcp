@@ -4,7 +4,7 @@
 # print copy-paste env blocks for running the integration tests.
 #
 # Usage:
-#   docker/test/up.sh            # every minor 16.0-17.8 (16 versions), in
+#   docker/test/up.sh            # every minor 16.0-17.9 (17 versions), in
 #                                 # batches of 5 concurrent instances (see
 #                                 # "all" mode below)
 #   docker/test/up.sh all 3      # every minor, 3 concurrent instances per batch
@@ -24,6 +24,7 @@
 #   docker/test/up.sh 176        # only 17.6
 #   docker/test/up.sh 177        # only 17.7
 #   docker/test/up.sh 178        # only 17.8
+#   docker/test/up.sh 179        # only 17.9
 #   SEED_MULTI_VERSIONS=1 docker/test/up.sh 178
 #                                 # only 17.8, with Setting::WorkPackageMultipleVersions
 #                                 # forced on (default: false when unset -- see
@@ -58,8 +59,8 @@
 # per instance), in exchange for the storages/project_storages read-tool
 # tests never needing to be skipped.
 #
-# "all" mode brings up instances in sequential BATCHES rather than all 16 at
-# once -- 16 concurrent all-in-one containers would exhaust a small Docker
+# "all" mode brings up instances in sequential BATCHES rather than all 17 at
+# once -- 17 concurrent all-in-one containers would exhaust a small Docker
 # VM's memory. Batch size defaults to 5 and is overridable as a second
 # argument (`up.sh all <n>`); each batch is brought up, waited on, seeded,
 # printed, and torn down (volumes kept) before the next batch starts. Batch
@@ -87,7 +88,7 @@ fi
 ALL_ENTRIES=(
     "op-16-0:0" "op-16-1:0" "op-16-2:0" "op-16-3:0" "op-16-4:0" "op-16-5:0" "op-16-6:0"
     "op-17-0:0" "op-17-1:0" "op-17-2:0" "op-17-3:0" "op-17-4:0"
-    "op-17-5:1" "op-17-6:1" "op-17-7:1" "op-17-8:1"
+    "op-17-5:1" "op-17-6:1" "op-17-7:1" "op-17-8:1" "op-17-9:1"
 )
 
 port_for() {
@@ -108,6 +109,7 @@ port_for() {
     op-17-6) echo 8176 ;;
     op-17-7) echo 8177 ;;
     op-17-8) echo 8178 ;;
+    op-17-9) echo 8179 ;;
     *)
         echo "unknown service: $1" >&2
         return 2
@@ -154,7 +156,7 @@ wait_nextcloud_healthy() {
 # Seeds one already-healthy instance and prints its copy-paste env block.
 # Nextcloud is always seeded (see the top-of-file note) -- no on/off switch.
 # SEED_MULTI_VERSIONS is read from up.sh's own environment (default 0, e.g.
-# `SEED_MULTI_VERSIONS=1 docker/test/up.sh 178`) -- OpenProject 17.8.0 ships
+# `SEED_MULTI_VERSIONS=1 docker/test/up.sh 178`) -- OpenProject 17.8+ images ship
 # Setting::WorkPackageMultipleVersions with default: true (verified live,
 # 2026-09-07, against config/constants/settings/definition.rb in the actual
 # image), so seed.rb always forces the setting to a known state rather than
@@ -264,8 +266,9 @@ case "$MODE" in
 176) ENTRIES=("op-17-6:1") ;;
 177) ENTRIES=("op-17-7:1") ;;
 178) ENTRIES=("op-17-8:1") ;;
+179) ENTRIES=("op-17-9:1") ;;
 *)
-    echo "usage: up.sh [all [batch-size]|160|161|162|163|164|165|16|170|171|172|173|174|17|176|177|178]" >&2
+    echo "usage: up.sh [all [batch-size]|160|161|162|163|164|165|16|170|171|172|173|174|17|176|177|178|179]" >&2
     exit 2
     ;;
 esac

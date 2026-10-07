@@ -84,12 +84,12 @@ different refresh cases:
 ## Pinned versions
 
 `fetch-sources.sh` clones the latest patch of every minor release from 16.0 to
-17.8 (`VERSIONS` array), so the check runs as a **version matrix**: each symbol's
-presence is shown across all 16 columns, pinpointing exactly which release
+17.9 (`VERSIONS` array), so the check runs as a **version matrix**: each symbol's
+presence is shown across all 17 columns, pinpointing exactly which release
 introduced or dropped it. As of this writing:
 
 ```
-16.0  16.1  16.2  16.3  16.4  16.5  16.6  17.0  17.1  17.2  17.3  17.4  17.5  17.6  17.7  17.8
+16.0  16.1  16.2  16.3  16.4  16.5  16.6  17.0  17.1  17.2  17.3  17.4  17.5  17.6  17.7  17.8  17.9
 ```
 
 The matrix confirms that of every API symbol the client uses, only `displayId`
@@ -127,7 +127,7 @@ renders as camelCase JSON (`lockVersion`).
 
 Checks six resources (work_package, user, category, project, version,
 membership) against a single pinned source version (`SOURCE_VERSION`,
-currently 17.8). Each field a CE representer declares is classified:
+currently 17.9). Each field a CE representer declares is classified:
 
 - **COVERED** — modeled on the resource's `Summary`/`Detail` dataclass(es) in
   `models.py`.
