@@ -167,11 +167,12 @@ async def test_fetch_activities_requests_the_global_endpoint() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fetch_activities_returns_none_on_not_found() -> None:
-    from openproject_ce_mcp.app.errors import NotFoundError
-
+@pytest.mark.parametrize("status", [404, 400])
+async def test_fetch_activities_returns_none_when_the_collection_route_is_absent(status: int) -> None:
+    # 17.4 routes the probe to time_entries/:id and answers 400 "id is invalid";
+    # 16.x and 17.7+ answer 404. Both mean "no collection route here".
     async def handler(request: httpx.Request) -> httpx.Response:
-        raise NotFoundError("no such endpoint")
+        return httpx.Response(status, json={"_type": "Error", "message": "id is invalid"})
 
     async with _client(handler) as http_client:
         api = HttpxTimeEntryApi(HttpxTransport(http_client), base_url=BASE_URL)

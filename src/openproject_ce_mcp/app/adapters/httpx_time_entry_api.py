@@ -36,7 +36,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse
 
 from ...models import TimeEntryActivitySummary, TimeEntrySummary
 from ..api_href import api_href as _api_href
-from ..errors import NotFoundError, OpenProjectServerError, PermissionDeniedError
+from ..errors import InvalidInputError, NotFoundError, OpenProjectServerError, PermissionDeniedError
 from ..ports.time_entry_api import TimeEntryActivityRecord, TimeEntryFormResult, TimeEntryRecord
 from ..transport.protocol import Transport
 from ._text import SUBJECT_LIMIT
@@ -197,9 +197,12 @@ class HttpxTimeEntryApi:
         # first attempt, which treats a failure identically to an empty
         # result) -- unlike fetch_activities_for_entity, catching here is
         # safe and keeps that call site simple. See module docstring.
+        # Some installations route the path to time_entries/:id and answer
+        # 400 ("id is invalid") instead of 404; both mean the collection
+        # route does not exist.
         try:
             return await self._transport.get_json("time_entries/activities")
-        except (NotFoundError, PermissionDeniedError, OpenProjectServerError):
+        except (NotFoundError, PermissionDeniedError, OpenProjectServerError, InvalidInputError):
             return None
 
     async def fetch_activities_for_entity(self, *, project_id: int, work_package_id: int | None) -> dict[str, Any]:
