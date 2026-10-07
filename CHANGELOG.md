@@ -111,6 +111,9 @@ development baseline.
   rejected `index`/`id`, `success` and `error` in `select`, although every item
   carries them regardless of `select`; naming them is now accepted and changes
   nothing.
+- `list_time_entry_activities` failed outright on servers that answer the
+  `time_entries/activities` probe with HTTP 400 instead of 404; the
+  per-project fallback now runs in that case too.
 
 ## [0.4.1] - 2026-09-22
 

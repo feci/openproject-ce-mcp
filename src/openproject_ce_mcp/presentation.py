@@ -217,7 +217,17 @@ def _select_fields(row: Any, select: frozenset[str], *, elide_none: bool) -> Any
         # failed batch/bulk item signals that via an explicit null here, not
         # via a missing key (see _to_payload's docstring).
         nested = getattr(row, nested_field)
-        out[nested_field] = _select_fields(nested, select, elide_none=elide_none) if nested is not None else None
+        if nested is None:
+            out[nested_field] = None
+        else:
+            # A name that is only a wrapper field says nothing about the entity,
+            # so it must not empty it.
+            entity_select = select & {f.name for f in dataclass_fields(nested)}
+            out[nested_field] = (
+                _select_fields(nested, entity_select, elide_none=elide_none)
+                if entity_select
+                else _to_payload(nested, elide_none=elide_none)
+            )
         return out
     return {
         f.name: _to_payload(getattr(row, f.name), elide_none=elide_none)

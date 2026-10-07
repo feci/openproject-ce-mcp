@@ -3917,7 +3917,7 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "capability_env_vars": ("OPENPROJECT_ENABLE_WORK_PACKAGE_READ",),
     },
     "get_work_packages": {
-        "description_hash": "3d58cdc94bf777092d9ec25ba5bc59eb016c0cb8ce81ed2a0bb6208640120f0b",
+        "description_hash": "65442c73ab1c78ac93cfe3f40e8b3ad910919570b5497e2459d10571ed5201e2",
         "input_schema": {
             "properties": {
                 "ids": {"items": {"anyOf": [{"type": "integer"}, {"type": "string"}]}, "title": "Ids", "type": "array"},
