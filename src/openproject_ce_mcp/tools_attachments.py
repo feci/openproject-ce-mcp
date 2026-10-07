@@ -198,7 +198,7 @@ async def create_work_package_attachment(
     client = _client_from_context(ctx)
     safe_work_package_id = _validate_work_package_ref(work_package_id)
     safe_file_path = _validate_required_text(file_path, field_name="file_path", max_length=4096)
-    safe_description = _validate_optional_text(description, field_name="description", max_length=10_000)
+    safe_description = _validate_optional_text(description, field_name="description", max_length=None)
     return await _run_tool(
         client.attachment.create(
             work_package_id=safe_work_package_id,

@@ -171,7 +171,7 @@ async def create_membership(
     safe_principal = _validate_required_query(principal, field_name="principal", max_length=255)
     safe_roles = _validate_required_string_list(roles, field_name="roles", max_items=20, item_max_length=100)
     safe_notification_message = _validate_optional_text(
-        notification_message, field_name="notification_message", max_length=10_000
+        notification_message, field_name="notification_message", max_length=None
     )
     return await _run_tool(
         client.membership.create(
@@ -197,7 +197,7 @@ async def update_membership(
     safe_id = _validate_positive_int(membership_id, field_name="membership_id")
     safe_roles = _validate_required_string_list(roles, field_name="roles", max_items=20, item_max_length=100)
     safe_notification_message = _validate_optional_text(
-        notification_message, field_name="notification_message", max_length=10_000
+        notification_message, field_name="notification_message", max_length=None
     )
     return await _run_tool(
         client.membership.update(

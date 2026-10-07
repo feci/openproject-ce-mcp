@@ -152,10 +152,10 @@ def _validate_project_descriptive_fields(
     validator functions for these same field names and is NOT covered here.
     """
     return {
-        "description": _validate_optional_text(description, field_name="description", max_length=10_000),
+        "description": _validate_optional_text(description, field_name="description", max_length=None),
         "status": _validate_optional_query(status, field_name="status", max_length=100),
         "status_explanation": _validate_optional_text(
-            status_explanation, field_name="status_explanation", max_length=10_000
+            status_explanation, field_name="status_explanation", max_length=None
         ),
         "parent": _validate_optional_project_ref(parent),
     }
@@ -279,10 +279,10 @@ async def update_project(
     safe_project = _validate_project_ref(project)
     safe_name = _validate_optional_query(name, field_name="name", max_length=255)
     safe_identifier = _validate_optional_project_identifier(identifier)
-    safe_description = _validate_optional_update_text(description, field_name="description", max_length=10_000)
+    safe_description = _validate_optional_update_text(description, field_name="description", max_length=None)
     safe_status = _validate_optional_query(status, field_name="status", max_length=100)
     safe_status_explanation = _validate_optional_update_text(
-        status_explanation, field_name="status_explanation", max_length=10_000
+        status_explanation, field_name="status_explanation", max_length=None
     )
     # parent: 'none' (any case) makes the project top-level; otherwise a project ref.
     safe_parent = _clearable(parent, lambda v: _validate_optional_project_ref(v), sentinel=CLEAR)

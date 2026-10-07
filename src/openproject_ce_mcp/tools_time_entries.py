@@ -170,7 +170,7 @@ async def create_time_entry(
     safe_work_package_id = _validate_optional_work_package_ref(work_package_id)
     safe_user = _validate_optional_user_or_principal_ref(user)
     safe_start_time = _validate_optional_datetime(start_time, field_name="start_time")
-    safe_comment = _validate_optional_text(comment, field_name="comment", max_length=10_000)
+    safe_comment = _validate_optional_text(comment, field_name="comment", max_length=None)
     if safe_project is None and safe_work_package_id is None:
         raise ValueError("Either project or work_package_id is required.")
     return await _run_tool(
@@ -216,7 +216,7 @@ async def update_time_entry(
     safe_hours = _validate_optional_duration(hours, field_name="hours")
     safe_spent_on = _validate_optional_date(spent_on, field_name="spent_on")
     safe_start_time = _validate_optional_datetime(start_time, field_name="start_time")
-    safe_comment = _validate_optional_update_text(comment, field_name="comment", max_length=10_000)
+    safe_comment = _validate_optional_update_text(comment, field_name="comment", max_length=None)
     _require_at_least_one(
         safe_user,
         safe_activity,
@@ -273,7 +273,7 @@ async def create_time_entry_until(
     safe_project = _validate_optional_project_ref(project)
     safe_work_package_id = _validate_optional_work_package_ref(work_package_id)
     safe_user = _validate_optional_user_or_principal_ref(user)
-    safe_comment = _validate_optional_text(comment, field_name="comment", max_length=10_000)
+    safe_comment = _validate_optional_text(comment, field_name="comment", max_length=None)
     if safe_project is None and safe_work_package_id is None:
         raise ValueError("Either project or work_package_id is required.")
     return await _run_tool(
@@ -319,7 +319,7 @@ async def update_time_entry_until(
     safe_user = _validate_optional_user_or_principal_ref(user)
     safe_activity = _validate_optional_query(activity, field_name="activity", max_length=100)
     safe_spent_on = _validate_optional_date(spent_on, field_name="spent_on")
-    safe_comment = _validate_optional_update_text(comment, field_name="comment", max_length=10_000)
+    safe_comment = _validate_optional_update_text(comment, field_name="comment", max_length=None)
     return await _run_tool(
         client.time_entry.update(
             time_entry_id=safe_id,

@@ -124,6 +124,14 @@ development baseline.
   match, which would have wrongly passed a release candidate whose version
   was never bumped once the 0.4.x line reaches a second patch digit (e.g.
   `0.4.10` contains `0.4.1` as a substring) -- now an exact-token comparison.
+
+## [0.4.2] - Unreleased
+
+### Fixed
+
+- The MCP server no longer imposes a 10,000-character limit on long-text
+  writes (descriptions, comments, custom field strings), so work packages
+  whose description grew longer in the web editor can be edited again.
 - Fixed the server's scope guidance: Budgets are a Community Edition
   feature, but budget tools are not available.
 

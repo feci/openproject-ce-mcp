@@ -896,3 +896,41 @@ def test_validate_custom_field_filters_rejects_overlong_value() -> None:
 def test_validate_custom_field_filters_rejects_not_a_dict() -> None:
     with pytest.raises(ValueError, match="must be an object mapping"):
         _validate_custom_field_filters([1, 2, 3])  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "validator",
+    [_validate_optional_text, _validate_optional_update_text, _validate_required_text],
+)
+def test_text_validators_accept_any_length_when_max_length_is_none(validator) -> None:
+    long_text = "x" * 250_000
+    assert validator(long_text, field_name="description", max_length=None) == long_text
+
+
+@pytest.mark.parametrize(
+    "validator",
+    [_validate_optional_text, _validate_optional_update_text, _validate_required_text],
+)
+def test_text_validators_keep_enforcing_a_fixed_cap(validator) -> None:
+    with pytest.raises(ValueError, match=r"^title must be at most 3 characters\.$"):
+        validator("abcd", field_name="title", max_length=3)
+
+
+def test_custom_fields_string_values_are_not_length_limited() -> None:
+    from openproject_ce_mcp.tools_validation import _validate_optional_custom_fields
+
+    long_value = " " + "y" * 60_000 + " "
+    assert _validate_optional_custom_fields({"Notes": long_value, "Tags": [long_value]}) == {
+        "Notes": long_value.strip(),
+        "Tags": [long_value.strip()],
+    }
+
+
+def test_board_query_json_strings_keep_a_fixed_cap() -> None:
+    from openproject_ce_mcp.tools_validation import BOARD_JSON_STRING_MAX, _validate_optional_filter_list
+
+    assert BOARD_JSON_STRING_MAX == 10_000
+    at_cap = "x" * BOARD_JSON_STRING_MAX
+    assert _validate_optional_filter_list([{"status": at_cap}]) == [{"status": at_cap}]
+    with pytest.raises(ValueError, match=r"filters string values must be at most 10000 characters\.$"):
+        _validate_optional_filter_list([{"status": at_cap + "x"}])
