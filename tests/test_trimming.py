@@ -371,7 +371,7 @@ def test_batch_read_select_trims_nested_work_package_fields() -> None:
 def test_batch_read_select_with_only_wrapper_fields_keeps_the_full_work_package() -> None:
     out = _to_payload(_batch_read(), select=frozenset({"success", "error"}))
     row = out["results"][0]
-    assert "description" in row["work_package"]
+    assert row["work_package"] == _to_payload(_batch_read())["results"][0]["work_package"]
     assert sorted(row) == ["id", "success", "work_package"]
 
 
@@ -471,7 +471,7 @@ def test_bulk_select_none_keeps_full_preview_payload() -> None:
 def test_bulk_select_with_only_wrapper_fields_keeps_the_full_nested_result() -> None:
     out = _to_payload(_bulk_write(), select=frozenset({"index", "success"}))
     item = out["items"][0]
-    assert "payload" in item["result"]
+    assert item["result"] == _to_payload(_bulk_write())["items"][0]["result"]
     assert sorted(item) == ["index", "result", "success"]
 
 

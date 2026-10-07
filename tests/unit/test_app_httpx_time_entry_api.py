@@ -169,8 +169,8 @@ async def test_fetch_activities_requests_the_global_endpoint() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status", [404, 400])
 async def test_fetch_activities_returns_none_when_the_collection_route_is_absent(status: int) -> None:
-    # 17.4 routes the probe to time_entries/:id and answers 400 "id is invalid";
-    # 16.x and 17.7+ answer 404. Both mean "no collection route here".
+    # Some installations route the probe to time_entries/:id and answer 400
+    # "id is invalid" where others answer 404; both mean "no collection route".
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(status, json={"_type": "Error", "message": "id is invalid"})
 
