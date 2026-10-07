@@ -223,6 +223,18 @@ EXPECTED_WRITE_RESULT_FIELD_ORDER: dict[str, list[str]] = {
         "validation_errors",
         "result",
     ],
+    "ContainerAttachmentWriteResult": [
+        "action",
+        "state",
+        "ready",
+        "message",
+        "attachment_id",
+        "container_type",
+        "container_id",
+        "payload",
+        "validation_errors",
+        "result",
+    ],
     "BoardWriteResult": [
         "action",
         "state",

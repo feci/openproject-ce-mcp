@@ -407,11 +407,13 @@ def test_work_package_write_no_longer_couples_to_notification_mark_read() -> Non
 def test_work_package_write_alone_does_not_expose_attachment_upload() -> None:
     names = set(tools.enabled_tool_names(make_settings(enable_work_package_write=True)))
     assert "create_work_package_attachment" not in names
+    assert "create_container_attachment" not in names
 
 
 def test_attachment_root_alone_does_not_expose_upload_without_write() -> None:
     names = set(tools.enabled_tool_names(make_settings(attachment_root="/tmp/uploads")))
     assert "create_work_package_attachment" not in names
+    assert "create_container_attachment" not in names
 
 
 def test_work_package_write_and_attachment_root_expose_upload() -> None:
@@ -493,11 +495,11 @@ def _all_five_scope_tools() -> set[str]:
 
 def test_project_scoped_and_global_read_tools_partition_the_five_scopes() -> None:
     all_five_scope_tools = _all_five_scope_tools()
-    assert len(all_five_scope_tools) == 85  # list_project_storages/get_project_storage, get_attachment_content added
+    assert len(all_five_scope_tools) == 86  # list_project_storages/get_project_storage, get_attachment_content added
     assert _EXPECTED_GLOBAL_READ_TOOLS <= all_five_scope_tools
     assert tools._PROJECT_SCOPED_READ_TOOLS == all_five_scope_tools - _EXPECTED_GLOBAL_READ_TOOLS
     assert tools._PROJECT_SCOPED_READ_TOOLS.isdisjoint(_EXPECTED_GLOBAL_READ_TOOLS)
-    assert len(tools._PROJECT_SCOPED_READ_TOOLS) == 71
+    assert len(tools._PROJECT_SCOPED_READ_TOOLS) == 72
 
 
 def test_project_scoped_read_tools_absent_when_read_projects_empty() -> None:
@@ -554,3 +556,33 @@ def test_read_enabled_unknown_scope_raises_not_silently_allows() -> None:
         pass
     else:
         raise AssertionError("expected ConfigError for an unknown scope")
+
+
+@pytest.mark.parametrize("scope", ["project", "meeting", "work_package"])
+def test_container_upload_registered_with_its_own_write_scope(scope: str) -> None:
+    flags = {**ALL_WRITE_OFF, f"enable_{scope}_write": True}
+    names = set(
+        tools.enabled_tool_names(
+            make_settings(
+                **flags,
+                attachment_root="/tmp/uploads",
+                read_projects=("*",),
+                write_projects=("*",),
+                enable_project_read=True,
+                enable_meeting_read=scope == "meeting",
+                enable_work_package_read=scope == "work_package",
+            )
+        )
+    )
+    assert "create_container_attachment" in names
+    assert ("create_work_package_attachment" in names) == (scope == "work_package")
+
+
+@pytest.mark.parametrize("root", [None, "/tmp/uploads"])
+def test_container_upload_absent_without_any_container_write_scope(root: str | None) -> None:
+    names = set(
+        tools.enabled_tool_names(
+            make_settings(**ALL_WRITE_OFF, attachment_root=root, read_projects=("*",), write_projects=("*",))
+        )
+    )
+    assert "create_container_attachment" not in names
