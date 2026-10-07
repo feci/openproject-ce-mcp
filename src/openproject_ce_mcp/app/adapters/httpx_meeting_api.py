@@ -34,6 +34,7 @@ no formattable-text validation-error shape to extract here.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from ...models import MeetingParticipantSummary, MeetingSummary
@@ -111,10 +112,17 @@ class HttpxMeetingApi:
     def _record(self, payload: dict[str, Any]) -> MeetingRecord:
         return MeetingRecord(summary=normalize_meeting(payload), project_link=payload.get("_links", {}).get("project"))
 
-    async def list_page(self, *, offset: int, limit: int, project_id: int | None) -> tuple[list[MeetingRecord], int]:
+    async def list_page(
+        self, *, offset: int, limit: int, project_id: int | None, title: str | None
+    ) -> tuple[list[MeetingRecord], int]:
         params = {"offset": str(offset), "pageSize": str(limit)}
+        filters: list[dict[str, Any]] = []
         if project_id is not None:
-            params["filters"] = f'[{{"project_id":{{"operator":"=","values":["{project_id}"]}}}}]'
+            filters.append({"project_id": {"operator": "=", "values": [str(project_id)]}})
+        if title is not None:
+            filters.append({"title": {"operator": "~", "values": [title]}})
+        if filters:
+            params["filters"] = json.dumps(filters)
         payload = await self._transport.get_json("meetings", params=params)
         elements = [item for item in payload.get("_embedded", {}).get("elements", []) if isinstance(item, dict)]
         records = [self._record(item) for item in elements]

@@ -49,7 +49,7 @@ def test_list_meetings_schema() -> None:
     tool = _tools(create_app(_make_settings()))["list_meetings"]
     assert (
         tool.description
-        == "List OpenProject meetings, optionally scoped to a project.\n\nRequires OpenProject 17.4+ — the meetings module's agenda/section/\nparticipant shape used here does not exist on 16.6, which only exposes\nan incompatible legacy \"meeting contents\" representation.\n\nproject: identifier, name, or numeric id. Omit to list across all\nreadable projects.\n\nlimit is capped at OPENPROJECT_MAX_PAGE_SIZE (default 50); pass the\nreturned next_offset as the next call's offset to page past the cap.\n"
+        == "List OpenProject meetings, optionally scoped to a project.\n\nRequires OpenProject 17.4+ — the meetings module's agenda/section/\nparticipant shape used here does not exist on 16.6, which only exposes\nan incompatible legacy \"meeting contents\" representation.\n\nproject: identifier, name, or numeric id. Omit to list across all\nreadable projects.\n\ntitle: case-insensitive substring match on the meeting title; an\noccurrence of a recurring meeting also matches on its series title.\nRequires OpenProject 17.9+ (older servers reject the filter).\n\nlimit is capped at OPENPROJECT_MAX_PAGE_SIZE (default 50); pass the\nreturned next_offset as the next call's offset to page past the cap.\n"
     )
     assert tool.output_schema is None
     assert tool.parameters == {
@@ -65,6 +65,18 @@ def test_list_meetings_schema() -> None:
                 ],
                 "default": None,
                 "title": "Project",
+            },
+            "title": {
+                "anyOf": [
+                    {
+                        "type": "string",
+                    },
+                    {
+                        "type": "null",
+                    },
+                ],
+                "default": None,
+                "title": "Title",
             },
             "offset": {
                 "default": 1,
@@ -89,7 +101,7 @@ def test_list_meetings_schema() -> None:
         "additionalProperties": False,
     }
     # Dict equality above doesn't check key order -- assert it separately.
-    assert list(tool.parameters["properties"]) == ["project", "offset", "limit"]
+    assert list(tool.parameters["properties"]) == ["project", "title", "offset", "limit"]
 
 
 def test_get_meeting_schema() -> None:

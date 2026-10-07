@@ -91,7 +91,7 @@ async def test_list_page_sends_offset_and_page_size() -> None:
 
     async with _client(handler) as http_client:
         api = HttpxMeetingApi(HttpxTransport(http_client))
-        records, total = await api.list_page(offset=2, limit=5, project_id=None)
+        records, total = await api.list_page(offset=2, limit=5, project_id=None, title=None)
 
     assert [r.summary.id for r in records] == [3]
     assert total == 3
@@ -106,7 +106,21 @@ async def test_list_page_sends_project_id_filter_when_given() -> None:
 
     async with _client(handler) as http_client:
         api = HttpxMeetingApi(HttpxTransport(http_client))
-        await api.list_page(offset=1, limit=10, project_id=6)
+        await api.list_page(offset=1, limit=10, project_id=6, title=None)
+
+
+@pytest.mark.asyncio
+async def test_list_page_sends_title_contains_filter_alongside_project() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert json.loads(request.url.params["filters"]) == [
+            {"project_id": {"operator": "=", "values": ["6"]}},
+            {"title": {"operator": "~", "values": ['Sprint "Q4"']}},
+        ]
+        return httpx.Response(200, json={"_embedded": {"elements": []}, "total": 0}, request=request)
+
+    async with _client(handler) as http_client:
+        api = HttpxMeetingApi(HttpxTransport(http_client))
+        await api.list_page(offset=1, limit=10, project_id=6, title='Sprint "Q4"')
 
 
 @pytest.mark.asyncio

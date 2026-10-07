@@ -78,6 +78,7 @@ _MEETING_OUTCOME_KINDS = {"information", "decision", "work_package"}
 async def list_meetings(
     ctx: Context,
     project: str | None = None,
+    title: str | None = None,
     offset: int = 1,
     limit: int | None = None,
 ) -> MeetingListResult:
@@ -90,14 +91,21 @@ async def list_meetings(
     project: identifier, name, or numeric id. Omit to list across all
     readable projects.
 
+    title: case-insensitive substring match on the meeting title; an
+    occurrence of a recurring meeting also matches on its series title.
+    Requires OpenProject 17.9+ (older servers reject the filter).
+
     limit is capped at OPENPROJECT_MAX_PAGE_SIZE (default 50); pass the
     returned next_offset as the next call's offset to page past the cap.
     """
     client = _client_from_context(ctx)
     safe_project = _validate_optional_project_ref(project)
+    safe_title = _validate_optional_query(title, field_name="title", max_length=255)
     safe_offset = _validate_offset(offset)
     safe_limit = _validate_limit(limit)
-    return await _run_tool(client.meeting.list_all(project=safe_project, offset=safe_offset, limit=safe_limit))
+    return await _run_tool(
+        client.meeting.list_all(project=safe_project, title=safe_title, offset=safe_offset, limit=safe_limit)
+    )
 
 
 @register_tool

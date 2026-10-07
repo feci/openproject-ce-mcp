@@ -40,7 +40,13 @@ import uuid
 
 import pytest
 
-from openproject_ce_mcp.client import ConflictError, NotFoundError, OpenProjectClient, PermissionDeniedError
+from openproject_ce_mcp.client import (
+    ConflictError,
+    InvalidInputError,
+    NotFoundError,
+    OpenProjectClient,
+    PermissionDeniedError,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -104,6 +110,26 @@ async def test_list_meetings(client: OpenProjectClient, test_project: str, meeti
     result = await client.meeting.list_all(project=test_project)
     assert result.count > 0
     assert any(m.title == title for m in result.results)
+
+
+async def test_list_meetings_title_filter(client: OpenProjectClient, test_project: str, meeting_ids: list[int]) -> None:
+    marker = uuid.uuid4().hex[:8]
+    title = f"[integration-test] Title Filter {marker}"
+    try:
+        create_result = await client.meeting.create(project=test_project, title=title, confirm=True)
+    except NotFoundError:
+        pytest.skip("Meetings module not installed/enabled, or OpenProject < 17.4, on this instance")
+    assert create_result.ready, create_result.validation_errors
+    meeting_ids.append(create_result.meeting_id)
+
+    try:
+        matched = await client.meeting.list_all(project=test_project, title=f"title filter {marker}")
+    except InvalidInputError:
+        pytest.skip("Meetings title filter requires OpenProject 17.9+ on this instance")
+    assert [m.id for m in matched.results] == [create_result.meeting_id]
+
+    unmatched = await client.meeting.list_all(project=test_project, title=f"no-such-title {marker}")
+    assert unmatched.results == []
 
 
 async def test_create_and_update_meeting_denied_outside_write_allowlist(

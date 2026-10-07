@@ -64,6 +64,7 @@ class MeetingService:
         self,
         *,
         project: str | None = None,
+        title: str | None = None,
         offset: int = 1,
         limit: int | None = None,
     ) -> MeetingListResult:
@@ -102,7 +103,7 @@ class MeetingService:
 
             raw_items, truncated = await scan_records_and_paginate(
                 lambda o, lim: call_version_gated(
-                    lambda: self._api.list_page(offset=o, limit=lim, project_id=resolved_project_id),
+                    lambda: self._api.list_page(offset=o, limit=lim, project_id=resolved_project_id, title=title),
                     feature="Meetings",
                     floor="17.4",
                 ),
@@ -125,7 +126,9 @@ class MeetingService:
             )
 
         records, total = await call_version_gated(
-            lambda: self._api.list_page(offset=offset, limit=effective_limit, project_id=resolved_project_id),
+            lambda: self._api.list_page(
+                offset=offset, limit=effective_limit, project_id=resolved_project_id, title=title
+            ),
             feature="Meetings",
             floor="17.4",
         )

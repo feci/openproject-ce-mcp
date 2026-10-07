@@ -4235,10 +4235,11 @@ TOOL_CONTRACT_SNAPSHOT: dict[str, dict[str, Any]] = {
         "capability_env_vars": ("OPENPROJECT_ENABLE_MEETING_READ",),
     },
     "list_meetings": {
-        "description_hash": "8807d934835095aa4a40fda5b9daa233280d7aabc493b01e5da21902a4948474",
+        "description_hash": "748152d62287b7adacb4f13e1f500d7b44440b2dd02b3edda66123df11fdbe92",
         "input_schema": {
             "properties": {
                 "project": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None, "title": "Project"},
+                "title": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None, "title": "Title"},
                 "offset": {"default": 1, "title": "Offset", "type": "integer"},
                 "limit": {"anyOf": [{"type": "integer"}, {"type": "null"}], "default": None, "title": "Limit"},
             },

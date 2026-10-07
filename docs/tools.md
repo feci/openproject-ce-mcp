@@ -490,7 +490,7 @@ later still). Meeting Outcomes require 17.6+ throughout.
 
 | Tool | Description |
 | --- | --- |
-| `list_meetings` | List meetings globally or scoped to a project (requires OpenProject 17.4+) |
+| `list_meetings` | List meetings globally or scoped to a project (requires OpenProject 17.4+); optional `title` substring filter (17.9+) |
 | `get_meeting` | Fetch a single meeting by id (requires OpenProject 17.4+) |
 | `create_meeting` | Validate and then create a meeting in a project; only writes when called again with `confirm=true` (requires OpenProject 17.4+) |
 | `update_meeting` | Validate and then update a meeting; only writes when called again with `confirm=true` (requires OpenProject 17.4+) |

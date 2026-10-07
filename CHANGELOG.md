@@ -60,6 +60,8 @@ development baseline.
   Off by default (`text` format, unchanged output); never logs the API
   token, Authorization header, work-package bodies, attachments, or other
   request/response payload content.
+- `list_meetings` accepts a `title` filter (case-insensitive substring,
+  also matching a recurring series' title) on OpenProject 17.9 and later.
 
 ### Changed
 

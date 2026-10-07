@@ -56,8 +56,8 @@ class _FakeMeetingApi:
         self.commit_update_calls: list[tuple[int, dict]] = []
         self.delete_calls: list[int] = []
 
-    async def list_page(self, *, offset: int, limit: int, project_id: int | None):
-        self.list_calls.append((offset, limit, project_id))
+    async def list_page(self, *, offset: int, limit: int, project_id: int | None, title: str | None = None, **kwargs):
+        self.list_calls.append((offset, limit, project_id, title))
         return list(self._records), len(self._records)
 
     async def get(self, meeting_id: int) -> MeetingRecord:
@@ -132,6 +132,16 @@ async def test_list_all_returns_stamped_results() -> None:
 
     assert result.count == 1
     assert result.results[0].title == "Sprint Planning"
+
+
+@pytest.mark.asyncio
+async def test_list_all_passes_the_title_filter_to_the_api() -> None:
+    api = _FakeMeetingApi()
+    service = _service(api=api)
+
+    await service.list_all(title="planning")
+
+    assert api.list_calls[0][3] == "planning"
 
 
 @pytest.mark.asyncio
